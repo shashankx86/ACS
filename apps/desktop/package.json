@@ -1,0 +1,25 @@
+{
+  "name": "riff-desktop",
+  "version": "0.0.0",
+  "private": true,
+  "main": "dist/main/main.js",
+  "scripts": {
+    "dev:renderer": "cd renderer && bun run dev",
+    "dev:main": "tsup src/main.ts src/preload.ts --watch --format cjs --out-dir dist/main --sourcemap --clean=false --external electron",
+    "dev:electron": "wait-on http://localhost:4321 dist/main/main.js && electron .",
+    "dev": "concurrently -k -s first \"bun run dev:renderer\" \"bun run dev:main\" \"bun run dev:electron\"",
+    "build:renderer": "cd renderer && bun install && bun run build",
+    "build:main": "tsup src/main.ts src/preload.ts --format cjs --out-dir dist/main --sourcemap --external electron",
+    "build": "bun run build:renderer && bun run build:main",
+    "dist": "bun run build && electron-builder --config electron-builder.config.cjs"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "concurrently": "^8.2.2",
+    "electron": "^30.0.0",
+    "electron-builder": "^24.13.3",
+    "tsup": "^8.0.2",
+    "typescript": "^5.4.5",
+    "wait-on": "^7.2.0"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "riff-desktop-renderer",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev --port 4321",
+    "build": "astro build",
+    "preview": "astro preview --port 4321"
+  },
+  "dependencies": {
+    "astro": "^4.15.0"
+  }
+}
