@@ -1,5 +1,5 @@
 {
-  "name": "riff-desktop-renderer",
+  "name": "acs-desktop-renderer",
   "private": true,
   "type": "module",
   "scripts": {

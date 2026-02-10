@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "riff-desktop-renderer",
+      "name": "acs-desktop-renderer",
       "dependencies": {
         "astro": "^4.15.0",
       },

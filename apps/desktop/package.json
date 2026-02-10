@@ -1,5 +1,5 @@
 {
-  "name": "riff-desktop",
+  "name": "acs-desktop",
   "version": "0.0.0",
   "private": true,
   "main": "dist/main/main.js",

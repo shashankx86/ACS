@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "riff-desktop",
+      "name": "acs-desktop",
       "devDependencies": {
         "@types/node": "^20.11.0",
         "concurrently": "^8.2.2",

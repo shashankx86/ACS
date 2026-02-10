@@ -1,12 +1,12 @@
 const path = require('node:path');
 
-const serverPath = process.env.RIFF_SERVER_PACKAGE_PATH
-  ? path.resolve(__dirname, process.env.RIFF_SERVER_PACKAGE_PATH)
+const serverPath = process.env.ACS_SERVER_PACKAGE_PATH
+  ? path.resolve(__dirname, process.env.ACS_SERVER_PACKAGE_PATH)
   : path.resolve(__dirname, '../../dist/release/server');
 
 module.exports = {
-  appId: 'dev.riff.desktop',
-  productName: 'Riff',
+  appId: 'dev.acs.desktop',
+  productName: 'ACS',
   directories: {
     output: 'dist/package'
   },

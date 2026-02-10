@@ -1,3 +1,3 @@
 import { contextBridge } from 'electron';
 
-contextBridge.exposeInMainWorld('riff', {});
+contextBridge.exposeInMainWorld('acs', {});

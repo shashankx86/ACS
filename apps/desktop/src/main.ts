@@ -11,7 +11,7 @@ const MAX_DELAY_MS = 1000;
 let serverProcess: ChildProcess | null = null;
 
 function resolveServerAddr(): string {
-  return process.env.RIFF_SERVER_ADDR ?? '127.0.0.1:8080';
+  return process.env.ACS_SERVER_ADDR ?? '127.0.0.1:8080';
 }
 
 async function checkHealth(addr: string): Promise<boolean> {
@@ -43,21 +43,21 @@ async function waitForHealth(addr: string): Promise<boolean> {
 }
 
 function resolveServerBin(): string {
-  if (process.env.RIFF_SERVER_BIN) {
-    return process.env.RIFF_SERVER_BIN;
+  if (process.env.ACS_SERVER_BIN) {
+    return process.env.ACS_SERVER_BIN;
   }
 
   if (app.isPackaged) {
     return path.join(process.resourcesPath, 'server');
   }
 
-  const build = process.env.RIFF_SERVER_BUILD ?? 'release';
+  const build = process.env.ACS_SERVER_BUILD ?? 'release';
   const appRoot = app.getAppPath();
   return path.resolve(appRoot, '..', '..', 'dist', build, 'server');
 }
 
 async function ensureServerRunning(): Promise<void> {
-  if (process.env.RIFF_DEV_ASSUME_SERVER) {
+  if (process.env.ACS_DEV_ASSUME_SERVER) {
     return;
   }
 
@@ -78,7 +78,7 @@ async function ensureServerRunning(): Promise<void> {
   }
 
   serverProcess = spawn(serverPath, [], {
-    env: { ...process.env, RIFF_SERVER_ADDR: addr },
+    env: { ...process.env, ACS_SERVER_ADDR: addr },
     stdio: 'ignore',
     detached: true
   });
@@ -120,7 +120,7 @@ app.whenReady().then(async () => {
     createWindow();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    dialog.showErrorBox('Riff Desktop', message);
+    dialog.showErrorBox('ACS', message);
     app.quit();
   }
 });

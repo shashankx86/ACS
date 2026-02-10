@@ -16,7 +16,7 @@ type Config struct {
 
 func LoadFromEnv() Config {
 	addr := defaultAddr
-	if envAddr := strings.TrimSpace(os.Getenv("RIFF_SERVER_ADDR")); envAddr != "" {
+	if envAddr := strings.TrimSpace(os.Getenv("ACS_SERVER_ADDR")); envAddr != "" {
 		addr = envAddr
 	}
 
