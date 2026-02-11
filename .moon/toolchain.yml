@@ -1,0 +1,17 @@
+unstable_go:
+  workspaces: true
+  tidyOnChange: false
+  version: "1.25.6"
+
+
+typescript:
+  syncProjectReferences: true
+  syncProjectReferencesToPaths: false
+  includeProjectReferenceSources: false
+  includeSharedTypes: false
+
+node:
+  version: "25.4.0"
+  packageManager: "bun"
+  bun:
+    version: "1.3.5"

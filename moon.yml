@@ -1,0 +1,47 @@
+# https://moonrepo.dev/docs/config/project
+language: bash
+
+tasks:
+  dev:
+    script: |
+      set -euo pipefail
+      if ! command -v air >/dev/null 2>&1; then
+        echo "missing 'air' in PATH"
+        echo "install: go install github.com/air-verse/air@latest"
+        exit 1
+      fi
+      trap 'kill 0' INT TERM EXIT
+      (cd apps/server && air) &
+      (cd apps/desktop && bun install && ACS_DEV_ASSUME_SERVER=1 bun run dev) &
+      wait -n
+    options:
+      shell: true
+      unixShell: bash
+      persistent: true
+      cache: false
+      runInCI: false
+
+  build:
+    script: |
+      set -euo pipefail
+      rm -rf dist/packed dist/unpacked
+      mkdir -p dist/packed dist/unpacked apps/server/dist
+      (cd apps/server && go build -o dist/server ./cmd/server)
+      (cd apps/desktop && bun install && ACS_SERVER_PACKAGE_PATH=../server/dist/server bun run dist)
+      cp -a apps/desktop/dist/package/linux-unpacked/. dist/unpacked/
+      cp -a apps/desktop/dist/package/* dist/packed/
+      rm -rf dist/packed/linux-unpacked
+    options:
+      shell: true
+      unixShell: bash
+      cache: false
+
+  doctor:
+    deps:
+      - 'server:doctor'
+      - 'desktop:doctor'
+
+  doctor-fix:
+    deps:
+      - 'server:doctor-fix'
+      - 'desktop:doctor-fix'

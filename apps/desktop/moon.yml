@@ -1,0 +1,50 @@
+# https://moonrepo.dev/docs/config/project
+language: typescript
+type: application
+tags:
+  - electron
+  - desktop
+
+tasks:
+  dev:
+    command: 'bun'
+    args: 'run dev'
+    options:
+      persistent: true
+      cache: false
+      runInCI: false
+
+  build:
+    command: 'bun'
+    args: 'run build'
+    inputs:
+      - 'src/**/*'
+      - 'renderer/src/**/*'
+      - 'package.json'
+      - 'tsconfig.json'
+    outputs:
+      - 'dist'
+    options:
+      cache: true
+
+  doctor:
+    command: 'bun'
+    args: 'run doctor'
+    inputs:
+      - 'package.json'
+      - 'bun.lock'
+      - 'renderer/package.json'
+      - 'renderer/bun.lock'
+    options:
+      cache: false
+
+  doctor-fix:
+    command: 'bun'
+    args: 'run doctor:fix'
+    inputs:
+      - 'package.json'
+      - 'bun.lock'
+      - 'renderer/package.json'
+      - 'renderer/bun.lock'
+    options:
+      cache: false

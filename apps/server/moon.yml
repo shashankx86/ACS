@@ -1,0 +1,55 @@
+# https://moonrepo.dev/docs/config/project
+language: go
+type: application
+tags:
+  - server
+  - backend
+  - api
+
+tasks:
+  dev:
+    command: 'go'
+    args: 'run ./cmd/server'
+    options:
+      persistent: true
+      cache: false
+      runInCI: false
+
+  build:
+    command: 'go'
+    args: 'build -o dist/server ./cmd/server'
+    inputs:
+      - '**/*.go'
+      - 'go.mod'
+      - 'go.sum'
+    outputs:
+      - 'dist/server'
+    options:
+      cache: true
+
+  test:
+    command: 'go'
+    args: 'test ./...'
+    inputs:
+      - '**/*.go'
+      - 'go.mod'
+    options:
+      cache: true
+
+  doctor:
+    command: 'go'
+    args: 'list -u -m all'
+    inputs:
+      - 'go.mod'
+      - 'go.sum'
+    options:
+      cache: false
+
+  doctor-fix:
+    command: 'go'
+    args: 'get -u ./...'
+    inputs:
+      - 'go.mod'
+      - 'go.sum'
+    options:
+      cache: false

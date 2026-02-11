@@ -1,4 +1,5 @@
 ---
+import '../styles/global.css';
 ---
 
 <html lang="en">
@@ -7,10 +8,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>ACS</title>
   </head>
-  <body>
-    <main>
-      <h1>ACS</h1>
-      <p>Astro renderer is running.</p>
+  <body class="bg-slate-900 text-white min-h-screen">
+    <main class="flex flex-col items-center justify-center min-h-screen">
+      <h1 class="text-4xl font-bold text-blue-400 mb-4">ACS</h1>
+      <p class="text-slate-300">Astro renderer with Tailwind CSS v4 is running.</p>
     </main>
   </body>
 </html>
