@@ -151,7 +151,11 @@ reference/
 .vscode/
 .idea/
 *.swp
+tmp/
 
 # moon
 .moon/cache
 .moon/docker
+
+# astro
+apps/desktop/renderer/.astro
