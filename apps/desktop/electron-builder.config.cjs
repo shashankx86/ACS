@@ -1,12 +1,12 @@
 const path = require('node:path');
 
-const serverPath = process.env.ACS_SERVER_PACKAGE_PATH
-  ? path.resolve(__dirname, process.env.ACS_SERVER_PACKAGE_PATH)
+const serverPath = process.env.OMT_SERVER_PACKAGE_PATH
+  ? path.resolve(__dirname, process.env.OMT_SERVER_PACKAGE_PATH)
   : path.resolve(__dirname, '../../dist/release/server');
 
 module.exports = {
-  appId: 'dev.acs.desktop',
-  productName: 'ACS',
+  appId: 'dev.0x5p.omt',
+  productName: 'Omit',
   directories: {
     output: 'dist/package'
   },

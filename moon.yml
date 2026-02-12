@@ -12,7 +12,7 @@ tasks:
       fi
       trap 'kill 0' INT TERM EXIT
       (cd apps/server && air) &
-      (cd apps/desktop && bun install && ACS_DEV_ASSUME_SERVER=1 bun run dev) &
+      (cd apps/desktop && bun install && OMT_DEV_ASSUME_SERVER=1 bun run dev) &
       wait -n
     options:
       shell: true
@@ -27,7 +27,7 @@ tasks:
       rm -rf dist/packed dist/unpacked
       mkdir -p dist/packed dist/unpacked apps/server/dist
       (cd apps/server && go build -o dist/server ./cmd/server)
-      (cd apps/desktop && bun install && ACS_SERVER_PACKAGE_PATH=../server/dist/server bun run dist)
+      (cd apps/desktop && bun install && OMT_SERVER_PACKAGE_PATH=../server/dist/server bun run dist)
       cp -a apps/desktop/dist/package/linux-unpacked/. dist/unpacked/
       cp -a apps/desktop/dist/package/* dist/packed/
       rm -rf dist/packed/linux-unpacked

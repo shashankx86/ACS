@@ -1,19 +1,8 @@
 ---
-import '../styles/global.css';
-import App from '../devstudio-replica/App';
+import BaseLayout from '../layouts/BaseLayout.astro';
+import OmitApp from '../components/app/OmitApp';
 ---
 
-<html lang="en" class="dark">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>DevStudio Replica</title>
-    <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
-      rel="stylesheet"
-    />
-  </head>
-  <body>
-    <App client:only="react" />
-  </body>
-</html>
+<BaseLayout title="Omit (OMT)">
+  <OmitApp client:only="react" />
+</BaseLayout>

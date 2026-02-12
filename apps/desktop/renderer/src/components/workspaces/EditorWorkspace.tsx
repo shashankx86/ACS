@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { FileExplorer } from './FileExplorer';
+import { FileExplorer } from '../panels/FileExplorer';
 import { X, Split, MoreHorizontal, ChevronRight } from 'lucide-react';
-import { highlightCode } from '../utils/syntax';
+import { highlightCode } from '../../lib/syntax';
 
 const MOCK_CODE = `import React from 'react';
 
@@ -9,7 +9,7 @@ export default function Page() {
   return (
     <div className="min-h-screen bg-black text-white">
       <header className="p-4 border-b border-zinc-800">
-        <h1>DevStudio</h1>
+        <h1>Omit</h1>
       </header>
       <main className="p-8">
         <p>Welcome to the editor workspace.</p>

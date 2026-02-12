@@ -1,18 +1,13 @@
 import React, { useState } from 'react';
-import {
-  ChevronDown,
-  WrapText,
-  RotateCcw,
-  Download
-} from 'lucide-react';
+import { ChevronDown, WrapText, RotateCcw, Download } from 'lucide-react';
 import { CodeDiff } from './CodeDiff';
-import { MOCK_ROUTE_FILE, MOCK_EFFECTS_FILE, MOCK_TOP_PANEL_FILE } from '../data/mockData';
+import { MOCK_ROUTE_FILE, MOCK_EFFECTS_FILE, MOCK_TOP_PANEL_FILE } from '../../data/mockData';
 
-interface EditorPanelProps {
+interface ChangesPanelProps {
   width: number;
 }
 
-export const EditorPanel: React.FC<EditorPanelProps> = ({ width }) => {
+export const ChangesPanel: React.FC<ChangesPanelProps> = ({ width }) => {
   const [wrap, setWrap] = useState(true);
 
   return (
@@ -39,7 +34,7 @@ export const EditorPanel: React.FC<EditorPanelProps> = ({ width }) => {
           <div className="flex items-center gap-1">
             {/* D Button */}
             <div className="flex items-center gap-1 hover:bg-[#1f1f22] px-2 py-1 rounded cursor-pointer group">
-              <span className="font-bold text-[10px] text-zinc-400 group-hover:text-zinc-200">D</span>
+              <span className="font-bold text-[10px] text-zinc-400">D</span>
               <ChevronDown size={12} className="text-zinc-600 group-hover:text-zinc-400" />
             </div>
 

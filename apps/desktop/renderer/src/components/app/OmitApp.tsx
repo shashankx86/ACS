@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { Minus, Square, X, ChevronDown, Check, Plus, Terminal, Brain, FileCode2 } from 'lucide-react';
-import { Workspace } from './components/Workspace';
-import { TerminalWorkspace } from './components/TerminalWorkspace';
-import { EditorWorkspace } from './components/EditorWorkspace';
+import { X, ChevronDown, Check, Plus, Terminal, Brain, FileCode2 } from 'lucide-react';
+import { AgentWorkspace } from '../workspaces/AgentWorkspace';
+import { TerminalWorkspace } from '../workspaces/TerminalWorkspace';
+import { EditorWorkspace } from '../workspaces/EditorWorkspace';
 
 interface Tab {
   id: string;
@@ -14,7 +14,7 @@ interface Tab {
   changeType: string;
 }
 
-export default function App() {
+export default function OmitApp() {
   const [tabs, setTabs] = useState<Tab[]>([
     { id: '1', title: 'Agent', type: 'agent', isEditorOpen: true, leftWidth: 260, rightWidth: 500, changeType: 'All Changes' }
   ]);
@@ -26,6 +26,23 @@ export default function App() {
 
   const updateTab = (id: string, updates: Partial<Tab>) => {
     setTabs(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t));
+  };
+
+  const updateTabTitle = (id: string, title: string) => {
+    setTabs((previousTabs) => previousTabs.map((tab) => {
+      if (tab.id !== id) {
+        return tab;
+      }
+
+      if (tab.title === title) {
+        return tab;
+      }
+
+      return {
+        ...tab,
+        title
+      };
+    }));
   };
 
   const addTab = (type: 'agent' | 'editor' | 'terminal' = 'agent') => {
@@ -44,7 +61,7 @@ export default function App() {
     setShowNewTabDropdown(false);
   };
 
-  const closeTabById = (id: string) => {
+  const closeTabById = (id: string, closeWindowIfLast = false) => {
     setTabs((previousTabs) => {
       const closingIndex = previousTabs.findIndex((tab) => tab.id === id);
       if (closingIndex < 0) {
@@ -52,6 +69,13 @@ export default function App() {
       }
 
       if (previousTabs.length === 1) {
+        if (closeWindowIfLast) {
+          queueMicrotask(() => {
+            void handleWindowControl('close');
+          });
+          return previousTabs;
+        }
+
         const fallbackTab: Tab = {
           id: Math.random().toString(36).substr(2, 9),
           title: 'Agent',
@@ -86,7 +110,7 @@ export default function App() {
   };
 
   const handleWindowControl = async (action: 'minimize' | 'toggleMaximize' | 'close') => {
-    const api = window.acs?.window;
+    const api = (window as any).omt?.window;
     if (!api) {
       return;
     }
@@ -125,7 +149,7 @@ export default function App() {
   };
 
   return (
-    <div className="h-full w-full flex flex-col bg-[#0a0a0a] text-zinc-300 overflow-hidden font-sans select-none">
+    <div className="h-full w-full flex flex-col bg-[#0a0a0a] text-zinc-300 overflow-hidden rounded-[14px] font-sans select-none">
       {/* Top Navigation Bar */}
       {/* Using bg-black for the track to contrast with the active tab which is bg-[#0a0a0a] */}
       <div className="h-10 min-h-[40px] bg-black border-b border-[#27272a] flex items-end relative z-50 pl-2 app-drag">
@@ -137,9 +161,10 @@ export default function App() {
             <div
               key={tab.id}
               onClick={() => setActiveTabId(tab.id)}
+              title={tab.title}
               className={`
                         group relative flex items-center gap-2 px-3 py-1.5 h-[34px]
-                        w-[160px] min-w-[80px] flex-shrink
+                        w-[160px] flex-shrink-0
                         text-xs cursor-pointer rounded-t-xl transition-all mr-1 mb-[-1px] border-t border-x app-no-drag
                         ${activeTabId === tab.id
                   ? 'bg-[#0a0a0a] border-[#27272a] border-b-[#0a0a0a] text-zinc-200 z-10'
@@ -263,9 +288,9 @@ export default function App() {
           )}
 
           {/* Window Controls */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5">
             <button
-              className="p-1.5 hover:bg-[#18181b] rounded cursor-pointer"
+              className="h-7 w-7 hover:bg-[#18181b] rounded cursor-pointer flex items-center justify-center"
               onClick={() => {
                 void handleWindowControl('minimize');
               }}
@@ -273,10 +298,10 @@ export default function App() {
               aria-label="Minimize window"
               title="Minimize"
             >
-              <Minus size={14} className="text-zinc-500 hover:text-zinc-300 transition-colors" />
+              <span className="text-zinc-400 hover:text-zinc-200 transition-colors text-base leading-none">−</span>
             </button>
             <button
-              className="p-1.5 hover:bg-[#18181b] rounded cursor-pointer"
+              className="h-7 w-7 hover:bg-[#18181b] rounded cursor-pointer flex items-center justify-center"
               onClick={() => {
                 void handleWindowControl('toggleMaximize');
               }}
@@ -284,10 +309,10 @@ export default function App() {
               aria-label="Toggle maximize window"
               title="Maximize"
             >
-              <Square size={12} className="text-zinc-500 hover:text-zinc-300 transition-colors" />
+              <span className="text-zinc-400 hover:text-zinc-200 transition-colors text-[13px] leading-none">□</span>
             </button>
             <button
-              className="p-1.5 hover:bg-red-500/10 rounded cursor-pointer group"
+              className="h-7 w-7 hover:bg-red-500/10 rounded cursor-pointer group flex items-center justify-center"
               onClick={() => {
                 void handleWindowControl('close');
               }}
@@ -295,7 +320,7 @@ export default function App() {
               aria-label="Close window"
               title="Close"
             >
-              <X size={14} className="text-zinc-500 group-hover:text-red-400 transition-colors" />
+              <span className="text-zinc-400 group-hover:text-red-400 transition-colors text-base leading-none">×</span>
             </button>
           </div>
         </div>
@@ -311,7 +336,7 @@ export default function App() {
           >
             {/* Conditionally Render Workspace based on Type */}
             {tab.type === 'agent' && (
-              <Workspace
+              <AgentWorkspace
                 isActive={activeTabId === tab.id}
                 isEditorOpen={tab.isEditorOpen}
                 leftWidth={tab.leftWidth}
@@ -325,7 +350,10 @@ export default function App() {
             )}
 
             {tab.type === 'terminal' && (
-              <TerminalWorkspace onExit={() => closeTabById(tab.id)} />
+              <TerminalWorkspace
+                onExit={() => closeTabById(tab.id, true)}
+                onTitleChange={(title) => updateTabTitle(tab.id, title)}
+              />
             )}
           </div>
         ))}

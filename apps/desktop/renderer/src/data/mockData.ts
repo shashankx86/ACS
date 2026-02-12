@@ -1,4 +1,4 @@
-import { FileChange, Project, FileDiff } from '../types';
+import { FileChange, Project, FileDiff } from '../types/ui';
 
 export const MOCK_FILE_CHANGES: FileChange[] = [
   { path: 'app/components/CaptionCard.tsx', additions: 0, deletions: 2 },

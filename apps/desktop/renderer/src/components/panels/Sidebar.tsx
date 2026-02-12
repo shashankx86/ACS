@@ -7,8 +7,8 @@ import {
   Database,
   Settings
 } from 'lucide-react';
-import { Project } from '../types';
-import { MOCK_PROJECTS } from '../data/mockData';
+import { Project } from '../../types/ui';
+import { MOCK_PROJECTS } from '../../data/mockData';
 
 interface SidebarProps {
   width: number;
@@ -103,10 +103,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ width, onNewThread }) => {
                 ))}
                 {project.name === 'shoo' && (
                   <div className="relative flex items-center px-3 py-1.5 rounded-md cursor-pointer text-[13px] text-zinc-600 hover:text-zinc-300 hover:bg-[#18181b]/40 transition-all duration-200 group">
-                    <div className="flex items-center gap-2.5 overflow-hidden min-w-0">
-                      <div className="w-4 h-4 flex-shrink-0" />
-                      <span className="truncate">Show more</span>
-                    </div>
+                    <div className="flex items-center gap-2.5 overflow-hidden min-w-0" />
+                    <span className="truncate">Show more</span>
                   </div>
                 )}
               </div>

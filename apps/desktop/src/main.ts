@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain } from 'electron';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
@@ -14,7 +14,7 @@ let serverProcess: ChildProcess | null = null;
 let terminalAuthToken: string | null = null;
 
 function resolveServerAddr(): string {
-  const raw = process.env.ACS_SERVER_ADDR ?? '127.0.0.1:8080';
+  const raw = process.env.OMT_SERVER_ADDR ?? '127.0.0.1:8080';
   const trimmed = raw.trim();
   const withoutScheme = trimmed.replace(/^(https?:\/\/|wss?:\/\/)/, '');
   return withoutScheme.replace(/\/+$/, '');
@@ -25,7 +25,7 @@ function resolveTerminalAuthToken(): string {
     return terminalAuthToken;
   }
 
-  const envToken = process.env.ACS_TERMINAL_AUTH_TOKEN?.trim();
+  const envToken = process.env.OMT_TERMINAL_AUTH_TOKEN?.trim();
   if (envToken) {
     terminalAuthToken = envToken;
     return terminalAuthToken;
@@ -96,21 +96,21 @@ async function waitForHealth(addr: string): Promise<boolean> {
 }
 
 function resolveServerBin(): string {
-  if (process.env.ACS_SERVER_BIN) {
-    return process.env.ACS_SERVER_BIN;
+  if (process.env.OMT_SERVER_BIN) {
+    return process.env.OMT_SERVER_BIN;
   }
 
   if (app.isPackaged) {
     return path.join(process.resourcesPath, 'server');
   }
 
-  const build = process.env.ACS_SERVER_BUILD ?? 'release';
+  const build = process.env.OMT_SERVER_BUILD ?? 'release';
   const appRoot = app.getAppPath();
   return path.resolve(appRoot, '..', '..', 'dist', build, 'server');
 }
 
 async function ensureServerRunning(): Promise<void> {
-  if (process.env.ACS_DEV_ASSUME_SERVER) {
+  if (process.env.OMT_DEV_ASSUME_SERVER) {
     return;
   }
 
@@ -123,7 +123,7 @@ async function ensureServerRunning(): Promise<void> {
     }
 
     throw new Error(
-      'server is already running but terminal authentication token does not match; stop the existing server or set ACS_TERMINAL_AUTH_TOKEN'
+      'server is already running but terminal authentication token does not match; stop the existing server or set OMT_TERMINAL_AUTH_TOKEN'
     );
   }
 
@@ -141,8 +141,8 @@ async function ensureServerRunning(): Promise<void> {
   serverProcess = spawn(serverPath, [], {
     env: {
       ...process.env,
-      ACS_SERVER_ADDR: addr,
-      ACS_TERMINAL_AUTH_TOKEN: token
+      OMT_SERVER_ADDR: addr,
+      OMT_TERMINAL_AUTH_TOKEN: token
     },
     stdio: 'ignore',
     detached: true
@@ -172,11 +172,13 @@ async function ensureServerRunning(): Promise<void> {
 }
 
 const WINDOW_CHANNELS = {
-  minimize: 'window:minimize',
-  toggleMaximize: 'window:toggle-maximize',
-  close: 'window:close',
-  serverAddr: 'server:get-addr',
-  terminalAuthToken: 'terminal:get-auth-token'
+  minimize: 'omt:window:minimize',
+  toggleMaximize: 'omt:window:toggle-maximize',
+  close: 'omt:window:close',
+  serverAddr: 'omt:server:get-addr',
+  terminalAuthToken: 'omt:terminal:get-auth-token',
+  clipboardReadText: 'omt:clipboard:read-text',
+  clipboardWriteText: 'omt:clipboard:write-text'
 } as const;
 
 function registerWindowControlsIpc(): void {
@@ -185,6 +187,8 @@ function registerWindowControlsIpc(): void {
   ipcMain.removeHandler(WINDOW_CHANNELS.close);
   ipcMain.removeHandler(WINDOW_CHANNELS.serverAddr);
   ipcMain.removeHandler(WINDOW_CHANNELS.terminalAuthToken);
+  ipcMain.removeHandler(WINDOW_CHANNELS.clipboardReadText);
+  ipcMain.removeHandler(WINDOW_CHANNELS.clipboardWriteText);
 
   ipcMain.handle(WINDOW_CHANNELS.minimize, (event) => {
     const target = BrowserWindow.fromWebContents(event.sender);
@@ -213,6 +217,14 @@ function registerWindowControlsIpc(): void {
 
   ipcMain.handle(WINDOW_CHANNELS.serverAddr, () => resolveServerAddr());
   ipcMain.handle(WINDOW_CHANNELS.terminalAuthToken, () => resolveTerminalAuthToken());
+  ipcMain.handle(WINDOW_CHANNELS.clipboardReadText, () => clipboard.readText());
+  ipcMain.handle(WINDOW_CHANNELS.clipboardWriteText, (_event, text: unknown) => {
+    if (typeof text !== 'string') {
+      return;
+    }
+
+    clipboard.writeText(text);
+  });
 }
 
 function createWindow(): void {
@@ -247,7 +259,7 @@ app.whenReady().then(async () => {
     createWindow();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    dialog.showErrorBox('ACS', message);
+    dialog.showErrorBox('Omit', message);
     app.quit();
   }
 });

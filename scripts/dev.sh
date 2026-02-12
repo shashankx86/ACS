@@ -84,7 +84,7 @@ while true; do
 
   (
     cd apps/desktop && \
-    ACS_DEV_ASSUME_SERVER=1 \
+    OMT_DEV_ASSUME_SERVER=1 \
     prefix desktop watchexec --restart --watch src --watch build.zig --ignore .zig-cache --ignore zig-out -- zig build run </dev/null
   ) &
   DESKTOP_PID=$!

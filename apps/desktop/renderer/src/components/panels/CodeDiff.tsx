@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ChevronDown } from 'lucide-react';
-import { FileDiff } from '../types';
-import { highlightCode } from '../utils/syntax';
+import { FileDiff } from '../../types/ui';
+import { highlightCode } from '../../lib/syntax';
 
 interface CodeDiffProps {
   file: FileDiff;

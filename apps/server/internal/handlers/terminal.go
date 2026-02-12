@@ -15,6 +15,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/creack/pty"
@@ -266,7 +267,7 @@ func TerminalWebSocketHandler(w http.ResponseWriter, r *http.Request) {
 			_ = writer.writeJSON(terminalEventMessage{Type: "error", Message: err.Error()})
 			return
 		case err := <-ptyErrCh:
-			if errors.Is(err, io.EOF) {
+			if shouldTreatPTYErrorAsProcessExit(err) {
 				select {
 				case waitErr := <-waitCh:
 					_ = writer.writeJSON(terminalEventMessage{Type: "exit", Code: extractExitCode(waitErr)})
@@ -345,8 +346,25 @@ func extractExitCode(err error) int {
 	return -1
 }
 
+func shouldTreatPTYErrorAsProcessExit(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	if errors.Is(err, io.EOF) || errors.Is(err, syscall.EIO) {
+		return true
+	}
+
+	var pathError *os.PathError
+	if errors.As(err, &pathError) && errors.Is(pathError.Err, syscall.EIO) {
+		return true
+	}
+
+	return false
+}
+
 func isValidTerminalToken(r *http.Request) bool {
-	expectedToken := strings.TrimSpace(os.Getenv("ACS_TERMINAL_AUTH_TOKEN"))
+	expectedToken := strings.TrimSpace(os.Getenv("OMT_TERMINAL_AUTH_TOKEN"))
 	if expectedToken == "" {
 		return true
 	}

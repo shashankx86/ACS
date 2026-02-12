@@ -32,7 +32,7 @@ function toTerminalSocketURL(addr: string): string {
 }
 
 async function resolveServerAddr(): Promise<string> {
-  const getter = window.acs?.server?.getAddr;
+  const getter = (window as any).omt?.server?.getAddr;
   if (!getter) {
     return DEFAULT_SERVER_ADDR;
   }
@@ -60,7 +60,7 @@ async function readTerminalBytes(payload: Blob | ArrayBuffer): Promise<Uint8Arra
 }
 
 async function resolveTerminalAuthToken(): Promise<string> {
-  const getter = window.acs?.server?.getTerminalAuthToken;
+  const getter = (window as any).omt?.server?.getTerminalAuthToken;
   if (!getter) {
     return '';
   }
@@ -77,15 +77,63 @@ async function resolveTerminalAuthToken(): Promise<string> {
   }
 }
 
+function isMacPlatform(): boolean {
+  return navigator.platform.toLowerCase().includes('mac');
+}
+
+async function readClipboardText(): Promise<string> {
+  const reader = (window as any).omt?.clipboard?.readText;
+  if (reader) {
+    try {
+      const result = await Promise.resolve(reader());
+      return typeof result === 'string' ? result : '';
+    } catch {
+      // fall back to browser clipboard API
+    }
+  }
+
+  if (navigator.clipboard?.readText) {
+    try {
+      return await navigator.clipboard.readText();
+    } catch {
+      return '';
+    }
+  }
+
+  return '';
+}
+
+async function writeClipboardText(value: string): Promise<void> {
+  const writer = (window as any).omt?.clipboard?.writeText;
+  if (writer) {
+    try {
+      await Promise.resolve(writer(value));
+      return;
+    } catch {
+      // fall back to browser clipboard API
+    }
+  }
+
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(value);
+    } catch {
+      // ignore clipboard write failures
+    }
+  }
+}
+
 type TerminalWorkspaceProps = {
   onExit?: () => void;
+  onTitleChange?: (title: string) => void;
 };
 
-export const TerminalWorkspace: React.FC<TerminalWorkspaceProps> = ({ onExit }) => {
+export const TerminalWorkspace: React.FC<TerminalWorkspaceProps> = ({ onExit, onTitleChange }) => {
   const terminalContainerRef = useRef<HTMLDivElement>(null);
   const connectionStateRef = useRef<ConnectionState>('connecting');
   const refreshOrReconnectRef = useRef<(() => void) | null>(null);
   const onExitRef = useRef(onExit);
+  const onTitleChangeRef = useRef(onTitleChange);
   const [connectionState, setConnectionState] = useState<ConnectionState>('connecting');
   const [connectionLabel, setConnectionLabel] = useState('Connecting…');
 
@@ -97,7 +145,8 @@ export const TerminalWorkspace: React.FC<TerminalWorkspaceProps> = ({ onExit }) 
 
   useEffect(() => {
     onExitRef.current = onExit;
-  }, [onExit]);
+    onTitleChangeRef.current = onTitleChange;
+  }, [onExit, onTitleChange]);
 
   useEffect(() => {
     const streamDecoder = new TextDecoder();
@@ -149,9 +198,60 @@ export const TerminalWorkspace: React.FC<TerminalWorkspaceProps> = ({ onExit }) 
 
     let isDisposed = false;
     let inputDisposable: { dispose: () => void } | undefined;
+    let keyDisposable: { dispose: () => void } | undefined;
+    let titleDisposable: { dispose: () => void } | undefined;
     let resizeDisposable: { dispose: () => void } | undefined;
     let resizeObserver: ResizeObserver | undefined;
     let socket: WebSocket | null = null;
+    let commandBuffer = '';
+
+    const isMac = isMacPlatform();
+
+    const sendTerminalInput = (value: string) => {
+      if (!socket || socket.readyState !== WebSocket.OPEN) {
+        return;
+      }
+
+      if (value.length === 0) {
+        return;
+      }
+
+      socket.send(UTF8_ENCODER.encode(value));
+    };
+
+    terminal.attachCustomKeyEventHandler((event) => {
+      if (event.type !== 'keydown') {
+        return true;
+      }
+
+      const key = event.key.toLowerCase();
+      const isCopyShortcut = isMac
+        ? event.metaKey && !event.ctrlKey && !event.altKey && key === 'c'
+        : (event.ctrlKey && event.shiftKey && key === 'c') || (event.ctrlKey && !event.shiftKey && !event.altKey && key === 'insert');
+      const isPasteShortcut = isMac
+        ? event.metaKey && !event.ctrlKey && !event.altKey && key === 'v'
+        : (event.ctrlKey && event.shiftKey && key === 'v') || (!event.ctrlKey && !event.altKey && event.shiftKey && key === 'insert');
+
+      if (isCopyShortcut) {
+        event.preventDefault();
+        const selectedText = terminal.getSelection();
+        if (selectedText.length > 0) {
+          void writeClipboardText(selectedText);
+        }
+        terminal.clearSelection();
+        return false;
+      }
+
+      if (isPasteShortcut) {
+        event.preventDefault();
+        void readClipboardText().then((text) => {
+          sendTerminalInput(text);
+        });
+        return false;
+      }
+
+      return true;
+    });
 
     const sendResize = () => {
       if (!socket || socket.readyState !== WebSocket.OPEN) {
@@ -171,10 +271,15 @@ export const TerminalWorkspace: React.FC<TerminalWorkspaceProps> = ({ onExit }) 
     const disconnectTerminal = () => {
       inputDisposable?.dispose();
       inputDisposable = undefined;
+      keyDisposable?.dispose();
+      keyDisposable = undefined;
+      titleDisposable?.dispose();
+      titleDisposable = undefined;
       resizeDisposable?.dispose();
       resizeDisposable = undefined;
       resizeObserver?.disconnect();
       resizeObserver = undefined;
+      commandBuffer = '';
       if (socket && socket.readyState < WebSocket.CLOSING) {
         socket.close(1000, 'terminal-disconnect');
       }
@@ -189,6 +294,15 @@ export const TerminalWorkspace: React.FC<TerminalWorkspaceProps> = ({ onExit }) 
       sendResize();
     };
 
+    const setTerminalTitle = (nextTitle: string) => {
+      const normalizedTitle = nextTitle.replace(/[\u0000-\u001f\u007f]/g, '').trim();
+      if (normalizedTitle.length === 0) {
+        return;
+      }
+
+      onTitleChangeRef.current?.(normalizedTitle);
+    };
+
     const connectTerminal = async () => {
       setConnection('connecting', 'Connecting…');
 
@@ -197,12 +311,20 @@ export const TerminalWorkspace: React.FC<TerminalWorkspaceProps> = ({ onExit }) 
         resolveTerminalAuthToken()
       ]);
 
-      const socketURL = new URL(toTerminalSocketURL(serverAddr));
-      if (terminalToken.length > 0) {
-        socketURL.searchParams.set('token', terminalToken);
+      let nextSocket: WebSocket;
+      try {
+        const socketURL = new URL(toTerminalSocketURL(serverAddr));
+        if (terminalToken.length > 0) {
+          socketURL.searchParams.set('token', terminalToken);
+        }
+
+        nextSocket = new WebSocket(socketURL.toString());
+      } catch {
+        setConnection('error', 'Connection error');
+        return;
       }
 
-      socket = new WebSocket(socketURL.toString());
+      socket = nextSocket;
       socket.binaryType = 'arraybuffer';
 
       socket.onopen = () => {
@@ -213,11 +335,36 @@ export const TerminalWorkspace: React.FC<TerminalWorkspaceProps> = ({ onExit }) 
         setConnection('connected', 'Connected');
         terminal.focus();
 
-        inputDisposable = terminal.onData((data) => {
-          if (!socket || socket.readyState !== WebSocket.OPEN) {
+        titleDisposable = terminal.onTitleChange((nextTitle) => {
+          setTerminalTitle(nextTitle);
+        });
+
+        keyDisposable = terminal.onKey(({ domEvent }) => {
+          if (domEvent.key === 'Enter') {
+            const command = commandBuffer.trim();
+            if (command.length > 0) {
+              setTerminalTitle(command);
+            }
+            commandBuffer = '';
             return;
           }
-          socket.send(UTF8_ENCODER.encode(data));
+
+          if (domEvent.key === 'Backspace') {
+            commandBuffer = commandBuffer.slice(0, -1);
+            return;
+          }
+
+          if (domEvent.ctrlKey || domEvent.metaKey || domEvent.altKey) {
+            return;
+          }
+
+          if (domEvent.key.length === 1) {
+            commandBuffer += domEvent.key;
+          }
+        });
+
+        inputDisposable = terminal.onData((data) => {
+          sendTerminalInput(data);
         });
 
         resizeDisposable = terminal.onResize(() => {
@@ -281,8 +428,16 @@ export const TerminalWorkspace: React.FC<TerminalWorkspaceProps> = ({ onExit }) 
         }
 
         inputDisposable?.dispose();
+        inputDisposable = undefined;
+        keyDisposable?.dispose();
+        keyDisposable = undefined;
+        titleDisposable?.dispose();
+        titleDisposable = undefined;
         resizeDisposable?.dispose();
+        resizeDisposable = undefined;
         resizeObserver?.disconnect();
+        resizeObserver = undefined;
+        commandBuffer = '';
 
         if (connectionStateRef.current !== 'error') {
           if (event.code === 1000) {

@@ -2,7 +2,7 @@
 
 declare global {
   interface Window {
-    acs?: {
+    omt?: {
       window?: {
         minimize?: () => Promise<void> | void;
         toggleMaximize?: () => Promise<boolean> | boolean;
@@ -11,6 +11,10 @@ declare global {
       server?: {
         getAddr?: () => Promise<string> | string;
         getTerminalAuthToken?: () => Promise<string> | string;
+      };
+      clipboard?: {
+        readText?: () => Promise<string> | string;
+        writeText?: (text: string) => Promise<void> | void;
       };
     };
   }

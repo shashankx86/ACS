@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Sidebar } from './Sidebar';
-import { ChatPanel } from './ChatPanel';
-import { EditorPanel } from './EditorPanel';
+import { Sidebar } from '../panels/Sidebar';
+import { ChatPanel } from '../panels/ChatPanel';
+import { ChangesPanel } from '../panels/ChangesPanel';
 
 interface WorkspaceProps {
   isActive: boolean;
@@ -11,7 +11,7 @@ interface WorkspaceProps {
   onLayoutChange: (updates: { leftWidth?: number; rightWidth?: number }) => void;
 }
 
-export const Workspace: React.FC<WorkspaceProps> = ({
+export const AgentWorkspace: React.FC<WorkspaceProps> = ({
   isActive,
   isEditorOpen,
   leftWidth,
@@ -78,7 +78,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({
         />
       )}
 
-      {isEditorOpen && <EditorPanel width={rightWidth} />}
+      {isEditorOpen && <ChangesPanel width={rightWidth} />}
     </div>
   );
 };
