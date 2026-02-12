@@ -158,4 +158,4 @@ tmp/
 .moon/docker
 
 # astro
-apps/desktop/renderer/.astro
+apps/desktop/renderer/.astro/
