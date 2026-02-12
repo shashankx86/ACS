@@ -1,17 +1,19 @@
 ---
 import '../styles/global.css';
+import App from '../devstudio-replica/App';
 ---
 
-<html lang="en">
+<html lang="en" class="dark">
   <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>ACS</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DevStudio Replica</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
   </head>
-  <body class="bg-slate-900 text-white min-h-screen">
-    <main class="flex flex-col items-center justify-center min-h-screen">
-      <h1 class="text-4xl font-bold text-blue-400 mb-4">ACS</h1>
-      <p class="text-slate-300">Astro renderer with Tailwind CSS v4 is running.</p>
-    </main>
+  <body>
+    <App client:only="react" />
   </body>
 </html>

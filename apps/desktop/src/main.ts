@@ -1,5 +1,6 @@
-import { app, BrowserWindow, dialog } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import { spawn, type ChildProcess } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -7,11 +8,44 @@ const HEALTH_TIMEOUT_MS = 1000;
 const TOTAL_TIMEOUT_MS = 10_000;
 const INITIAL_DELAY_MS = 100;
 const MAX_DELAY_MS = 1000;
+const TERMINAL_TOKEN_FILE = 'terminal-auth-token';
 
 let serverProcess: ChildProcess | null = null;
+let terminalAuthToken: string | null = null;
 
 function resolveServerAddr(): string {
-  return process.env.ACS_SERVER_ADDR ?? '127.0.0.1:8080';
+  const raw = process.env.ACS_SERVER_ADDR ?? '127.0.0.1:8080';
+  const trimmed = raw.trim();
+  const withoutScheme = trimmed.replace(/^(https?:\/\/|wss?:\/\/)/, '');
+  return withoutScheme.replace(/\/+$/, '');
+}
+
+function resolveTerminalAuthToken(): string {
+  if (terminalAuthToken) {
+    return terminalAuthToken;
+  }
+
+  const envToken = process.env.ACS_TERMINAL_AUTH_TOKEN?.trim();
+  if (envToken) {
+    terminalAuthToken = envToken;
+    return terminalAuthToken;
+  }
+
+  const tokenPath = path.join(app.getPath('userData'), TERMINAL_TOKEN_FILE);
+  try {
+    const saved = fs.readFileSync(tokenPath, 'utf8').trim();
+    if (saved.length > 0) {
+      terminalAuthToken = saved;
+      return terminalAuthToken;
+    }
+  } catch {
+    // token file does not exist yet
+  }
+
+  terminalAuthToken = randomBytes(32).toString('hex');
+  fs.mkdirSync(path.dirname(tokenPath), { recursive: true });
+  fs.writeFileSync(tokenPath, terminalAuthToken, { mode: 0o600 });
+  return terminalAuthToken;
 }
 
 async function checkHealth(addr: string): Promise<boolean> {
@@ -22,6 +56,25 @@ async function checkHealth(addr: string): Promise<boolean> {
       signal: controller.signal
     });
     return response.status === 200;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function checkTerminalAuth(addr: string, token: string): Promise<boolean> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), HEALTH_TIMEOUT_MS);
+  try {
+    const endpoint = new URL(`http://${addr}/v1/terminals/auth`);
+    endpoint.searchParams.set('token', token);
+
+    const response = await fetch(endpoint.toString(), {
+      signal: controller.signal
+    });
+
+    return response.status === 204;
   } catch {
     return false;
   } finally {
@@ -62,8 +115,16 @@ async function ensureServerRunning(): Promise<void> {
   }
 
   const addr = resolveServerAddr();
+  const token = resolveTerminalAuthToken();
+
   if (await checkHealth(addr)) {
-    return;
+    if (await checkTerminalAuth(addr, token)) {
+      return;
+    }
+
+    throw new Error(
+      'server is already running but terminal authentication token does not match; stop the existing server or set ACS_TERMINAL_AUTH_TOKEN'
+    );
   }
 
   const serverPath = resolveServerBin();
@@ -78,7 +139,11 @@ async function ensureServerRunning(): Promise<void> {
   }
 
   serverProcess = spawn(serverPath, [], {
-    env: { ...process.env, ACS_SERVER_ADDR: addr },
+    env: {
+      ...process.env,
+      ACS_SERVER_ADDR: addr,
+      ACS_TERMINAL_AUTH_TOKEN: token
+    },
     stdio: 'ignore',
     detached: true
   });
@@ -94,12 +159,73 @@ async function ensureServerRunning(): Promise<void> {
     serverProcess = null;
     throw new Error('server failed health check');
   }
+
+  if (!(await checkTerminalAuth(addr, token))) {
+    try {
+      serverProcess.kill();
+    } catch {
+      // ignore
+    }
+    serverProcess = null;
+    throw new Error('server started but terminal authentication check failed');
+  }
+}
+
+const WINDOW_CHANNELS = {
+  minimize: 'window:minimize',
+  toggleMaximize: 'window:toggle-maximize',
+  close: 'window:close',
+  serverAddr: 'server:get-addr',
+  terminalAuthToken: 'terminal:get-auth-token'
+} as const;
+
+function registerWindowControlsIpc(): void {
+  ipcMain.removeHandler(WINDOW_CHANNELS.minimize);
+  ipcMain.removeHandler(WINDOW_CHANNELS.toggleMaximize);
+  ipcMain.removeHandler(WINDOW_CHANNELS.close);
+  ipcMain.removeHandler(WINDOW_CHANNELS.serverAddr);
+  ipcMain.removeHandler(WINDOW_CHANNELS.terminalAuthToken);
+
+  ipcMain.handle(WINDOW_CHANNELS.minimize, (event) => {
+    const target = BrowserWindow.fromWebContents(event.sender);
+    target?.minimize();
+  });
+
+  ipcMain.handle(WINDOW_CHANNELS.toggleMaximize, (event) => {
+    const target = BrowserWindow.fromWebContents(event.sender);
+    if (!target) {
+      return false;
+    }
+
+    if (target.isMaximized()) {
+      target.unmaximize();
+      return false;
+    }
+
+    target.maximize();
+    return true;
+  });
+
+  ipcMain.handle(WINDOW_CHANNELS.close, (event) => {
+    const target = BrowserWindow.fromWebContents(event.sender);
+    target?.close();
+  });
+
+  ipcMain.handle(WINDOW_CHANNELS.serverAddr, () => resolveServerAddr());
+  ipcMain.handle(WINDOW_CHANNELS.terminalAuthToken, () => resolveTerminalAuthToken());
 }
 
 function createWindow(): void {
   const window = new BrowserWindow({
-    width: 1200,
-    height: 800,
+    width: 1280,
+    height: 840,
+    minWidth: 1100,
+    minHeight: 700,
+    frame: false,
+    titleBarStyle: 'hidden',
+    transparent: true,
+    backgroundColor: '#00000000',
+    roundedCorners: true,
     webPreferences: {
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js')
@@ -117,6 +243,7 @@ function createWindow(): void {
 app.whenReady().then(async () => {
   try {
     await ensureServerRunning();
+    registerWindowControlsIpc();
     createWindow();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

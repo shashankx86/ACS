@@ -20,6 +20,8 @@ type Server struct {
 func New(cfg config.Config, logger *zap.Logger) *Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/global/health", handlers.HealthHandler)
+	mux.HandleFunc("/v1/terminals/auth", handlers.TerminalAuthHandler)
+	mux.HandleFunc("/v1/terminals/ws", handlers.TerminalWebSocketHandler)
 
 	handler := middleware.Recovery(logger)(middleware.RequestLogger(logger)(mux))
 	srv := &http.Server{
