@@ -13,5 +13,16 @@ contextBridge.exposeInMainWorld('omt', {
   clipboard: {
     readText: () => ipcRenderer.invoke('omt:clipboard:read-text'),
     writeText: (text: string) => ipcRenderer.invoke('omt:clipboard:write-text', text)
+  },
+  // expose CLI-provided values (if any)
+  app: {
+    getOpenPaths: () => {
+      try {
+        return JSON.parse(process.env.OMT_OPEN_PATHS || '[]');
+      } catch {
+        return [];
+      }
+    },
+    getLocale: () => process.env.OMT_LOCALE || undefined
   }
 });

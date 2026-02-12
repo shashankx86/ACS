@@ -12,7 +12,13 @@ interface Tab {
   leftWidth: number;
   rightWidth: number;
   changeType: string;
+  // optional path opened in this tab (file or folder)
+  openPath?: string | null;
+  // dirty flag for unsaved changes
+  isDirty?: boolean;
 }
+
+import { workspaceOpen } from '../../lib/serverApi';
 
 export default function OmitApp() {
   const [tabs, setTabs] = useState<Tab[]>([
@@ -21,6 +27,44 @@ export default function OmitApp() {
   const [activeTabId, setActiveTabId] = useState('1');
   const [showDropdown, setShowDropdown] = useState(false);
   const [showNewTabDropdown, setShowNewTabDropdown] = useState(false);
+
+  // On first render, check for any CLI-provided paths and open them
+  React.useEffect(() => {
+    const api = (window as any).omt?.app;
+    if (!api || !api.getOpenPaths) return;
+
+    (async () => {
+      try {
+        const paths: string[] = api.getOpenPaths() || [];
+        if (!paths || paths.length === 0) return;
+
+        // inform backend (best-effort) and then open tabs in the UI
+        try {
+          await workspaceOpen(paths);
+        } catch (err) {
+          // backend may not support workspace open yet — ignore and continue
+          // we still open paths in the UI.
+        }
+
+        let lastId: string | null = null;
+        setTabs((previous) => {
+          const next = [...previous];
+          for (const p of paths) {
+            const newId = Math.random().toString(36).substr(2, 9);
+            lastId = newId;
+            next.push({ id: newId, title: p.split('/').pop() || p, type: 'editor', isEditorOpen: true, leftWidth: 260, rightWidth: 500, changeType: 'All Changes', openPath: p });
+          }
+          return next;
+        });
+
+        // activate the last opened path
+        if (lastId) setActiveTabId(lastId);
+      } catch (_) {
+        // ignore
+      }
+    })();
+  }, []);
+
 
   const activeTab = tabs.find(t => t.id === activeTabId) || tabs[0];
 
@@ -45,9 +89,9 @@ export default function OmitApp() {
     }));
   };
 
-  const addTab = (type: 'agent' | 'editor' | 'terminal' = 'agent') => {
+  const addTab = (type: 'agent' | 'editor' | 'terminal' = 'agent', openPath?: string | null) => {
     const newId = Math.random().toString(36).substr(2, 9);
-    const title = type === 'agent' ? 'Agent' : type === 'editor' ? 'Editor' : 'Terminal';
+    const title = openPath ? (openPath.split('/').pop() || openPath) : type === 'agent' ? 'Agent' : type === 'editor' ? 'Editor' : 'Terminal';
     setTabs(prev => [...prev, {
       id: newId,
       title,
@@ -55,7 +99,9 @@ export default function OmitApp() {
       isEditorOpen: true,
       leftWidth: 260,
       rightWidth: 500,
-      changeType: 'All Changes'
+      changeType: 'All Changes',
+      openPath: openPath ?? null,
+      isDirty: false
     }]);
     setActiveTabId(newId);
     setShowNewTabDropdown(false);
@@ -66,6 +112,12 @@ export default function OmitApp() {
       const closingIndex = previousTabs.findIndex((tab) => tab.id === id);
       if (closingIndex < 0) {
         return previousTabs;
+      }
+
+      const tabToClose = previousTabs[closingIndex];
+      if (tabToClose.isDirty) {
+        const discard = window.confirm('This tab has unsaved changes — close and discard changes?');
+        if (!discard) return previousTabs;
       }
 
       if (previousTabs.length === 1) {
@@ -175,7 +227,7 @@ export default function OmitApp() {
               {/* Icon */}
               {getTabIcon(tab.type, activeTabId === tab.id)}
 
-              <span className="truncate flex-1 font-medium">{tab.title}</span>
+              <span className="truncate flex-1 font-medium">{tab.title}{tab.isDirty ? ' *' : ''}</span>
 
               <div
                 onClick={(e) => closeTab(e, tab.id)}
@@ -346,7 +398,13 @@ export default function OmitApp() {
             )}
 
             {tab.type === 'editor' && (
-              <EditorWorkspace />
+              <EditorWorkspace
+                initialPath={tab.openPath ?? undefined}
+                onOpenFile={(p) => addTab('editor', p)}
+                onDirtyChange={(dirty) => updateTab(tab.id, { isDirty: dirty })}
+                onSave={(savedPath?: string) => updateTab(tab.id, { isDirty: false, openPath: savedPath ?? tab.openPath, title: (savedPath ? savedPath.split('/').pop() : tab.title) })}
+                onTitleChange={(title) => updateTabTitle(tab.id, title)}
+              />
             )}
 
             {tab.type === 'terminal' && (

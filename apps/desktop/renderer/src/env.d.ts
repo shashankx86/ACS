@@ -16,6 +16,10 @@ declare global {
         readText?: () => Promise<string> | string;
         writeText?: (text: string) => Promise<void> | void;
       };
+      app?: {
+        getOpenPaths?: () => string[];
+        getLocale?: () => string | undefined;
+      };
     };
   }
 }
