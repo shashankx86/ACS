@@ -20,6 +20,8 @@ interface Tab {
 
 import { workspaceOpen } from '../../lib/serverApi';
 
+const pathLabel = (value: string) => value.split(/[\\/]/).filter(Boolean).pop() || value;
+
 export default function OmitApp() {
   const [tabs, setTabs] = useState<Tab[]>([
     { id: '1', title: 'Agent', type: 'agent', isEditorOpen: true, leftWidth: 260, rightWidth: 500, changeType: 'All Changes' }
@@ -52,7 +54,7 @@ export default function OmitApp() {
           for (const p of paths) {
             const newId = Math.random().toString(36).substr(2, 9);
             lastId = newId;
-            next.push({ id: newId, title: p.split('/').pop() || p, type: 'editor', isEditorOpen: true, leftWidth: 260, rightWidth: 500, changeType: 'All Changes', openPath: p });
+            next.push({ id: newId, title: pathLabel(p), type: 'editor', isEditorOpen: true, leftWidth: 260, rightWidth: 500, changeType: 'All Changes', openPath: p });
           }
           return next;
         });
@@ -69,7 +71,24 @@ export default function OmitApp() {
   const activeTab = tabs.find(t => t.id === activeTabId) || tabs[0];
 
   const updateTab = (id: string, updates: Partial<Tab>) => {
-    setTabs(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t));
+    setTabs((previousTabs) => {
+      let changed = false;
+      const nextTabs = previousTabs.map((tab) => {
+        if (tab.id !== id) {
+          return tab;
+        }
+
+        const hasDifference = Object.entries(updates).some(([key, value]) => (tab as any)[key] !== value);
+        if (!hasDifference) {
+          return tab;
+        }
+
+        changed = true;
+        return { ...tab, ...updates };
+      });
+
+      return changed ? nextTabs : previousTabs;
+    });
   };
 
   const updateTabTitle = (id: string, title: string) => {
@@ -91,7 +110,7 @@ export default function OmitApp() {
 
   const addTab = (type: 'agent' | 'editor' | 'terminal' = 'agent', openPath?: string | null) => {
     const newId = Math.random().toString(36).substr(2, 9);
-    const title = openPath ? (openPath.split('/').pop() || openPath) : type === 'agent' ? 'Agent' : type === 'editor' ? 'Editor' : 'Terminal';
+    const title = openPath ? pathLabel(openPath) : type === 'agent' ? 'Agent' : type === 'editor' ? 'Editor' : 'Terminal';
     setTabs(prev => [...prev, {
       id: newId,
       title,
@@ -201,7 +220,7 @@ export default function OmitApp() {
   };
 
   return (
-    <div className="h-full w-full flex flex-col bg-[#0a0a0a] text-zinc-300 overflow-hidden rounded-[14px] font-sans select-none">
+    <div className="h-full w-full flex flex-col bg-[#0a0a0a] text-zinc-300 overflow-hidden rounded-[10px] font-sans select-none">
       {/* Top Navigation Bar */}
       {/* Using bg-black for the track to contrast with the active tab which is bg-[#0a0a0a] */}
       <div className="h-10 min-h-[40px] bg-black border-b border-[#27272a] flex items-end relative z-50 pl-2 app-drag">
@@ -400,9 +419,9 @@ export default function OmitApp() {
             {tab.type === 'editor' && (
               <EditorWorkspace
                 initialPath={tab.openPath ?? undefined}
-                onOpenFile={(p) => addTab('editor', p)}
+                onOpenPath={(p) => updateTab(tab.id, { openPath: p, title: pathLabel(p) })}
                 onDirtyChange={(dirty) => updateTab(tab.id, { isDirty: dirty })}
-                onSave={(savedPath?: string) => updateTab(tab.id, { isDirty: false, openPath: savedPath ?? tab.openPath, title: (savedPath ? savedPath.split('/').pop() : tab.title) })}
+                onSave={(savedPath?: string) => updateTab(tab.id, { isDirty: false, openPath: savedPath ?? tab.openPath, title: (savedPath ? pathLabel(savedPath) : tab.title) })}
                 onTitleChange={(title) => updateTabTitle(tab.id, title)}
               />
             )}

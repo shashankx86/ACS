@@ -14,6 +14,11 @@ contextBridge.exposeInMainWorld('omt', {
     readText: () => ipcRenderer.invoke('omt:clipboard:read-text'),
     writeText: (text: string) => ipcRenderer.invoke('omt:clipboard:write-text', text)
   },
+  dialog: {
+    openFile: (defaultPath?: string) => ipcRenderer.invoke('omt:dialog:open-file', defaultPath),
+    openFolder: (defaultPath?: string) => ipcRenderer.invoke('omt:dialog:open-folder', defaultPath),
+    saveFile: (defaultPath?: string) => ipcRenderer.invoke('omt:dialog:save-file', defaultPath)
+  },
   // expose CLI-provided values (if any)
   app: {
     getOpenPaths: () => {

@@ -1,17 +1,24 @@
 package handlers
 
 import (
+	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
+
+	fsservice "local/monorepo/internal/fs"
 )
 
-const maxReadFileBytes = 5 * 1024 * 1024 // 5 MiB
+const (
+	maxWriteRequestBodyBytes = 6 * 1024 * 1024
+	maxPathRequestBodyBytes  = 128 * 1024
+	maxWorkspaceRequestBytes = 256 * 1024
+)
 
 type FSStatResponse struct {
 	Path    string    `json:"path"`
@@ -42,218 +49,74 @@ type WorkspaceOpenResponse struct {
 	Paths []FSStatResponse `json:"paths"`
 }
 
-func FsStatHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	if !isLoopbackRemote(r.RemoteAddr) {
-		http.Error(w, "fs stat only allows loopback clients", http.StatusForbidden)
-		return
-	}
-
-	p := r.URL.Query().Get("path")
-	if p == "" {
-		http.Error(w, "missing path parameter", http.StatusBadRequest)
-		return
-	}
-
-	abs, err := filepath.Abs(filepath.Clean(p))
-	if err != nil {
-		http.Error(w, "invalid path", http.StatusBadRequest)
-		return
-	}
-
-	info, err := os.Stat(abs)
-	if errors.Is(err, os.ErrNotExist) {
-		resp := FSStatResponse{Path: abs, Exists: false, IsDir: false}
-		writeJSON(w, resp)
-		return
-	}
-	if err != nil {
-		http.Error(w, "failed to stat path", http.StatusInternalServerError)
-		return
-	}
-
-	resp := FSStatResponse{
-		Path:    abs,
-		Exists:  true,
-		Size:    info.Size(),
-		IsDir:   info.IsDir(),
-		ModTime: info.ModTime(),
-	}
-
-	writeJSON(w, resp)
+type FSHandler struct {
+	service *fsservice.Service
 }
 
-func FsListHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+func NewFSHandler(service *fsservice.Service) *FSHandler {
+	if service == nil {
+		service = fsservice.NewService(fsservice.DefaultConfig())
+	}
+	return &FSHandler{service: service}
+}
+
+func (h *FSHandler) Stat(w http.ResponseWriter, r *http.Request) {
+	if !requireFSAccess(w, r, http.MethodGet, "fs stat") {
 		return
 	}
 
-	if !isLoopbackRemote(r.RemoteAddr) {
-		http.Error(w, "fs list only allows loopback clients", http.StatusForbidden)
-		return
-	}
-
-	p := r.URL.Query().Get("path")
-	if p == "" {
-		http.Error(w, "missing path parameter", http.StatusBadRequest)
-		return
-	}
-
-	abs, err := filepath.Abs(filepath.Clean(p))
+	result, err := h.service.Stat(r.Context(), r.URL.Query().Get("path"))
 	if err != nil {
-		http.Error(w, "invalid path", http.StatusBadRequest)
+		writeFSError(w, err)
 		return
 	}
 
-	info, err := os.Stat(abs)
+	writeJSON(w, toFSStatResponse(result))
+}
+
+func (h *FSHandler) List(w http.ResponseWriter, r *http.Request) {
+	if !requireFSAccess(w, r, http.MethodGet, "fs list") {
+		return
+	}
+
+	entries, err := h.service.List(r.Context(), r.URL.Query().Get("path"))
 	if err != nil {
-		http.Error(w, "failed to stat path", http.StatusInternalServerError)
-		return
-	}
-
-	if !info.IsDir() {
-		http.Error(w, "path is not a directory", http.StatusBadRequest)
-		return
-	}
-
-	f, err := os.Open(abs)
-	if err != nil {
-		http.Error(w, "failed to open directory", http.StatusInternalServerError)
-		return
-	}
-	defer f.Close()
-
-	entries, err := f.Readdir(0)
-	if err != nil && err != io.EOF {
-		http.Error(w, "failed to read directory", http.StatusInternalServerError)
+		writeFSError(w, err)
 		return
 	}
 
 	out := make([]FSListEntry, 0, len(entries))
-	for _, e := range entries {
+	for _, entry := range entries {
 		out = append(out, FSListEntry{
-			Name:  e.Name(),
-			Path:  filepath.Join(abs, e.Name()),
-			IsDir: e.IsDir(),
-			Size:  e.Size(),
+			Name:  entry.Name,
+			Path:  entry.Path,
+			IsDir: entry.IsDir,
+			Size:  entry.Size,
 		})
 	}
-
 	writeJSON(w, out)
 }
 
-func FsReadHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+func (h *FSHandler) Read(w http.ResponseWriter, r *http.Request) {
+	if !requireFSAccess(w, r, http.MethodGet, "fs read") {
 		return
 	}
 
-	if !isLoopbackRemote(r.RemoteAddr) {
-		http.Error(w, "fs read only allows loopback clients", http.StatusForbidden)
-		return
-	}
-
-	p := r.URL.Query().Get("path")
-	if p == "" {
-		http.Error(w, "missing path parameter", http.StatusBadRequest)
-		return
-	}
-
-	abs, err := filepath.Abs(filepath.Clean(p))
+	result, err := h.service.ReadText(r.Context(), r.URL.Query().Get("path"))
 	if err != nil {
-		http.Error(w, "invalid path", http.StatusBadRequest)
+		writeFSError(w, err)
 		return
 	}
 
-	info, err := os.Stat(abs)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			http.Error(w, "file does not exist", http.StatusNotFound)
-			return
-		}
-		http.Error(w, "failed to stat file", http.StatusInternalServerError)
-		return
-	}
-
-	if info.IsDir() {
-		http.Error(w, "path is a directory", http.StatusBadRequest)
-		return
-	}
-
-	if info.Size() > maxReadFileBytes {
-		http.Error(w, "file too large to read", http.StatusRequestEntityTooLarge)
-		return
-	}
-
-	b, err := os.ReadFile(abs)
-	if err != nil {
-		http.Error(w, "failed to read file", http.StatusInternalServerError)
-		return
-	}
-
-	writeJSON(w, FSReadResponse{Path: abs, Size: int64(len(b)), Content: string(b)})
+	writeJSON(w, FSReadResponse{
+		Path:    result.Path,
+		Size:    result.Size,
+		Content: result.Content,
+	})
 }
 
-func WorkspacesOpenHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	if !isLoopbackRemote(r.RemoteAddr) {
-		http.Error(w, "workspace open only allows loopback clients", http.StatusForbidden)
-		return
-	}
-
-	var req WorkspaceOpenRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
-		return
-	}
-
-	if len(req.Paths) == 0 {
-		http.Error(w, "no paths provided", http.StatusBadRequest)
-		return
-	}
-
-	out := make([]FSStatResponse, 0, len(req.Paths))
-	for _, p := range req.Paths {
-		abs, err := filepath.Abs(filepath.Clean(p))
-		if err != nil {
-			out = append(out, FSStatResponse{Path: p, Exists: false})
-			continue
-		}
-
-		info, err := os.Stat(abs)
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				out = append(out, FSStatResponse{Path: abs, Exists: false})
-				continue
-			}
-			out = append(out, FSStatResponse{Path: abs, Exists: false})
-			continue
-		}
-
-		out = append(out, FSStatResponse{Path: abs, Exists: true, Size: info.Size(), IsDir: info.IsDir(), ModTime: info.ModTime()})
-	}
-
-	writeJSON(w, WorkspaceOpenResponse{Paths: out})
-}
-
-// Write file contents (create or overwrite)
-func FsWriteHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	if !isLoopbackRemote(r.RemoteAddr) {
-		http.Error(w, "fs write only allows loopback clients", http.StatusForbidden)
+func (h *FSHandler) Write(w http.ResponseWriter, r *http.Request) {
+	if !requireFSAccess(w, r, http.MethodPost, "fs write") {
 		return
 	}
 
@@ -261,50 +124,21 @@ func FsWriteHandler(w http.ResponseWriter, r *http.Request) {
 		Path    string `json:"path"`
 		Content string `json:"content"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeJSONBody(w, r, &req, maxWriteRequestBodyBytes) {
 		return
 	}
 
-	if strings.TrimSpace(req.Path) == "" {
-		http.Error(w, "missing path", http.StatusBadRequest)
-		return
-	}
-
-	abs, err := filepath.Abs(filepath.Clean(req.Path))
+	result, err := h.service.WriteText(r.Context(), req.Path, req.Content)
 	if err != nil {
-		http.Error(w, "invalid path", http.StatusBadRequest)
+		writeFSError(w, err)
 		return
 	}
 
-	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
-		http.Error(w, "failed to create parent directories", http.StatusInternalServerError)
-		return
-	}
-
-	if err := os.WriteFile(abs, []byte(req.Content), 0o644); err != nil {
-		http.Error(w, "failed to write file", http.StatusInternalServerError)
-		return
-	}
-
-	info, err := os.Stat(abs)
-	if err != nil {
-		http.Error(w, "written but failed to stat file", http.StatusInternalServerError)
-		return
-	}
-
-	writeJSON(w, FSStatResponse{Path: abs, Exists: true, Size: info.Size(), IsDir: info.IsDir(), ModTime: info.ModTime()})
+	writeJSON(w, toFSStatResponse(result))
 }
 
-// Create a file or directory
-func FsCreateHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	if !isLoopbackRemote(r.RemoteAddr) {
-		http.Error(w, "fs create only allows loopback clients", http.StatusForbidden)
+func (h *FSHandler) Create(w http.ResponseWriter, r *http.Request) {
+	if !requireFSAccess(w, r, http.MethodPost, "fs create") {
 		return
 	}
 
@@ -312,62 +146,21 @@ func FsCreateHandler(w http.ResponseWriter, r *http.Request) {
 		Path  string `json:"path"`
 		IsDir bool   `json:"isDir"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeJSONBody(w, r, &req, maxPathRequestBodyBytes) {
 		return
 	}
 
-	if strings.TrimSpace(req.Path) == "" {
-		http.Error(w, "missing path", http.StatusBadRequest)
-		return
-	}
-
-	abs, err := filepath.Abs(filepath.Clean(req.Path))
+	result, err := h.service.Create(r.Context(), req.Path, req.IsDir)
 	if err != nil {
-		http.Error(w, "invalid path", http.StatusBadRequest)
+		writeFSError(w, err)
 		return
 	}
 
-	if req.IsDir {
-		if err := os.MkdirAll(abs, 0o755); err != nil {
-			http.Error(w, "failed to create directory", http.StatusInternalServerError)
-			return
-		}
-	} else {
-		if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
-			http.Error(w, "failed to create parent directories", http.StatusInternalServerError)
-			return
-		}
-		f, err := os.OpenFile(abs, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
-		if err != nil {
-			if errors.Is(err, os.ErrExist) {
-				http.Error(w, "file already exists", http.StatusConflict)
-				return
-			}
-			http.Error(w, "failed to create file", http.StatusInternalServerError)
-			return
-		}
-		_ = f.Close()
-	}
-
-	info, err := os.Stat(abs)
-	if err != nil {
-		http.Error(w, "created but failed to stat", http.StatusInternalServerError)
-		return
-	}
-
-	writeJSON(w, FSStatResponse{Path: abs, Exists: true, Size: info.Size(), IsDir: info.IsDir(), ModTime: info.ModTime()})
+	writeJSON(w, toFSStatResponse(result))
 }
 
-// Delete a file or directory (recursive when requested)
-func FsDeleteHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	if !isLoopbackRemote(r.RemoteAddr) {
-		http.Error(w, "fs delete only allows loopback clients", http.StatusForbidden)
+func (h *FSHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	if !requireFSAccess(w, r, http.MethodPost, "fs delete") {
 		return
 	}
 
@@ -375,38 +168,140 @@ func FsDeleteHandler(w http.ResponseWriter, r *http.Request) {
 		Path      string `json:"path"`
 		Recursive bool   `json:"recursive"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeJSONBody(w, r, &req, maxPathRequestBodyBytes) {
 		return
 	}
 
-	if strings.TrimSpace(req.Path) == "" {
-		http.Error(w, "missing path", http.StatusBadRequest)
+	if err := h.service.Delete(r.Context(), req.Path, req.Recursive); err != nil {
+		writeFSError(w, err)
 		return
-	}
-
-	abs, err := filepath.Abs(filepath.Clean(req.Path))
-	if err != nil {
-		http.Error(w, "invalid path", http.StatusBadRequest)
-		return
-	}
-
-	if req.Recursive {
-		if err := os.RemoveAll(abs); err != nil {
-			http.Error(w, "failed to remove path", http.StatusInternalServerError)
-			return
-		}
-	} else {
-		if err := os.Remove(abs); err != nil {
-			http.Error(w, "failed to remove path", http.StatusInternalServerError)
-			return
-		}
 	}
 
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// helper: small JSON writer
+func (h *FSHandler) WorkspaceOpen(w http.ResponseWriter, r *http.Request) {
+	if !requireFSAccess(w, r, http.MethodPost, "workspace open") {
+		return
+	}
+
+	var req WorkspaceOpenRequest
+	if !decodeJSONBody(w, r, &req, maxWorkspaceRequestBytes) {
+		return
+	}
+
+	stats, err := h.service.WorkspaceOpen(r.Context(), req.Paths)
+	if err != nil {
+		writeFSError(w, err)
+		return
+	}
+
+	out := make([]FSStatResponse, 0, len(stats))
+	for _, stat := range stats {
+		out = append(out, toFSStatResponse(stat))
+	}
+	writeJSON(w, WorkspaceOpenResponse{Paths: out})
+}
+
+func toFSStatResponse(stat fsservice.StatResult) FSStatResponse {
+	return FSStatResponse{
+		Path:    stat.Path,
+		Exists:  stat.Exists,
+		Size:    stat.Size,
+		IsDir:   stat.IsDir,
+		ModTime: stat.ModTime,
+	}
+}
+
+func requireFSAccess(w http.ResponseWriter, r *http.Request, method, operation string) bool {
+	if r.Method != method {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return false
+	}
+	if !isLoopbackRemote(r.RemoteAddr) {
+		http.Error(w, operation+" only allows loopback clients", http.StatusForbidden)
+		return false
+	}
+	if !isAllowedTerminalOrigin(r.Header.Get("Origin")) {
+		http.Error(w, "forbidden origin", http.StatusForbidden)
+		return false
+	}
+	if !isValidFSToken(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return false
+	}
+	return true
+}
+
+func isValidFSToken(r *http.Request) bool {
+	expectedToken := strings.TrimSpace(os.Getenv("OMT_TERMINAL_AUTH_TOKEN"))
+	if expectedToken == "" {
+		return true
+	}
+
+	providedToken := strings.TrimSpace(r.Header.Get("X-OMT-Token"))
+	if providedToken == "" {
+		providedToken = strings.TrimSpace(r.URL.Query().Get("token"))
+	}
+	if providedToken == "" {
+		return false
+	}
+
+	return subtle.ConstantTimeCompare([]byte(providedToken), []byte(expectedToken)) == 1
+}
+
+func decodeJSONBody(w http.ResponseWriter, r *http.Request, into interface{}, maxBytes int64) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
+
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(into); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return false
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return false
+	}
+
+	return true
+}
+
+func writeFSError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, context.Canceled):
+		http.Error(w, "request canceled", http.StatusRequestTimeout)
+	case errors.Is(err, context.DeadlineExceeded):
+		http.Error(w, "request timed out", http.StatusRequestTimeout)
+	case errors.Is(err, fsservice.ErrPathRequired), errors.Is(err, fsservice.ErrInvalidPath):
+		http.Error(w, "invalid path", http.StatusBadRequest)
+	case errors.Is(err, fsservice.ErrPathNotFound):
+		http.Error(w, "path does not exist", http.StatusNotFound)
+	case errors.Is(err, fsservice.ErrPathNotDirectory):
+		http.Error(w, "path is not a directory", http.StatusBadRequest)
+	case errors.Is(err, fsservice.ErrPathIsDirectory):
+		http.Error(w, "path is a directory", http.StatusBadRequest)
+	case errors.Is(err, fsservice.ErrDirectoryNeedsRecursive):
+		http.Error(w, "directory delete requires recursive=true", http.StatusConflict)
+	case errors.Is(err, fsservice.ErrFileTooLarge):
+		http.Error(w, "file too large to read", http.StatusRequestEntityTooLarge)
+	case errors.Is(err, fsservice.ErrContentTooLarge):
+		http.Error(w, "content too large", http.StatusRequestEntityTooLarge)
+	case errors.Is(err, fsservice.ErrBinaryFile), errors.Is(err, fsservice.ErrUnsupportedFileType):
+		http.Error(w, "unsupported file type", http.StatusUnsupportedMediaType)
+	case errors.Is(err, fsservice.ErrRefuseFilesystemRoot):
+		http.Error(w, "refusing to mutate filesystem root", http.StatusBadRequest)
+	case errors.Is(err, fsservice.ErrFileAlreadyExists):
+		http.Error(w, "file already exists", http.StatusConflict)
+	case errors.Is(err, fsservice.ErrNoWorkspacePaths):
+		http.Error(w, "no paths provided", http.StatusBadRequest)
+	case errors.Is(err, fsservice.ErrTooManyWorkspacePaths):
+		http.Error(w, "too many paths provided", http.StatusBadRequest)
+	default:
+		http.Error(w, "filesystem operation failed", http.StatusInternalServerError)
+	}
+}
+
 func writeJSON(w http.ResponseWriter, v interface{}) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(v)

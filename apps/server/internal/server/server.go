@@ -5,10 +5,12 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"go.uber.org/zap"
 
 	"local/monorepo/internal/config"
+	"local/monorepo/internal/fs"
 	"local/monorepo/internal/handlers"
 	"local/monorepo/internal/middleware"
 )
@@ -21,18 +23,19 @@ type Server struct {
 
 func New(cfg config.Config, logger *zap.Logger) *Server {
 	mux := http.NewServeMux()
+	fsHandler := handlers.NewFSHandler(fs.NewService(fs.DefaultConfig()))
 	mux.HandleFunc("/v1/global/health", handlers.HealthHandler)
 	mux.HandleFunc("/v1/terminals/auth", handlers.TerminalAuthHandler)
 	mux.HandleFunc("/v1/terminals/ws", handlers.TerminalWebSocketHandler)
 
 	// filesystem / workspace APIs
-	mux.HandleFunc("/v1/fs/stat", handlers.FsStatHandler)
-	mux.HandleFunc("/v1/fs/list", handlers.FsListHandler)
-	mux.HandleFunc("/v1/fs/read", handlers.FsReadHandler)
-	mux.HandleFunc("/v1/fs/write", handlers.FsWriteHandler)
-	mux.HandleFunc("/v1/fs/create", handlers.FsCreateHandler)
-	mux.HandleFunc("/v1/fs/delete", handlers.FsDeleteHandler)
-	mux.HandleFunc("/v1/workspaces/open", handlers.WorkspacesOpenHandler)
+	mux.HandleFunc("/v1/fs/stat", fsHandler.Stat)
+	mux.HandleFunc("/v1/fs/list", fsHandler.List)
+	mux.HandleFunc("/v1/fs/read", fsHandler.Read)
+	mux.Handle("/v1/fs/write", middleware.MaxBodyBytes(6*1024*1024)(http.HandlerFunc(fsHandler.Write)))
+	mux.Handle("/v1/fs/create", middleware.MaxBodyBytes(128*1024)(http.HandlerFunc(fsHandler.Create)))
+	mux.Handle("/v1/fs/delete", middleware.MaxBodyBytes(128*1024)(http.HandlerFunc(fsHandler.Delete)))
+	mux.Handle("/v1/workspaces/open", middleware.MaxBodyBytes(256*1024)(http.HandlerFunc(fsHandler.WorkspaceOpen)))
 
 	// optionally serve the renderer web UI (serve-web)
 	webRoot := os.Getenv("OMT_WEB_ROOT")
@@ -64,8 +67,13 @@ func New(cfg config.Config, logger *zap.Logger) *Server {
 
 	handler := middleware.Recovery(logger)(middleware.RequestLogger(logger)(mux))
 	srv := &http.Server{
-		Addr:    cfg.Addr,
-		Handler: handler,
+		Addr:              cfg.Addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    1 << 20,
 	}
 
 	return &Server{srv: srv, logger: logger}

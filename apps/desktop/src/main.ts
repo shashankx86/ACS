@@ -332,7 +332,10 @@ const WINDOW_CHANNELS = {
   serverAddr: 'omt:server:get-addr',
   terminalAuthToken: 'omt:terminal:get-auth-token',
   clipboardReadText: 'omt:clipboard:read-text',
-  clipboardWriteText: 'omt:clipboard:write-text'
+  clipboardWriteText: 'omt:clipboard:write-text',
+  dialogOpenFile: 'omt:dialog:open-file',
+  dialogOpenFolder: 'omt:dialog:open-folder',
+  dialogSaveFile: 'omt:dialog:save-file'
 } as const;
 
 function registerWindowControlsIpc(): void {
@@ -343,6 +346,9 @@ function registerWindowControlsIpc(): void {
   ipcMain.removeHandler(WINDOW_CHANNELS.terminalAuthToken);
   ipcMain.removeHandler(WINDOW_CHANNELS.clipboardReadText);
   ipcMain.removeHandler(WINDOW_CHANNELS.clipboardWriteText);
+  ipcMain.removeHandler(WINDOW_CHANNELS.dialogOpenFile);
+  ipcMain.removeHandler(WINDOW_CHANNELS.dialogOpenFolder);
+  ipcMain.removeHandler(WINDOW_CHANNELS.dialogSaveFile);
 
   ipcMain.handle(WINDOW_CHANNELS.minimize, (event) => {
     const target = BrowserWindow.fromWebContents(event.sender);
@@ -378,6 +384,47 @@ function registerWindowControlsIpc(): void {
     }
 
     clipboard.writeText(text);
+  });
+
+  ipcMain.handle(WINDOW_CHANNELS.dialogOpenFile, async (event, defaultPath: unknown) => {
+    const target = BrowserWindow.fromWebContents(event.sender) ?? undefined;
+    const result = await dialog.showOpenDialog(target, {
+      properties: ['openFile'],
+      defaultPath: typeof defaultPath === 'string' && defaultPath.trim().length > 0 ? defaultPath : undefined
+    });
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return null;
+    }
+
+    return result.filePaths[0];
+  });
+
+  ipcMain.handle(WINDOW_CHANNELS.dialogOpenFolder, async (event, defaultPath: unknown) => {
+    const target = BrowserWindow.fromWebContents(event.sender) ?? undefined;
+    const result = await dialog.showOpenDialog(target, {
+      properties: ['openDirectory'],
+      defaultPath: typeof defaultPath === 'string' && defaultPath.trim().length > 0 ? defaultPath : undefined
+    });
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return null;
+    }
+
+    return result.filePaths[0];
+  });
+
+  ipcMain.handle(WINDOW_CHANNELS.dialogSaveFile, async (event, defaultPath: unknown) => {
+    const target = BrowserWindow.fromWebContents(event.sender) ?? undefined;
+    const result = await dialog.showSaveDialog(target, {
+      defaultPath: typeof defaultPath === 'string' && defaultPath.trim().length > 0 ? defaultPath : undefined
+    });
+
+    if (result.canceled || !result.filePath) {
+      return null;
+    }
+
+    return result.filePath;
   });
 }
 

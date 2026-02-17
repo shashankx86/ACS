@@ -1,138 +1,289 @@
 import React from 'react';
+import { ChevronDown, ChevronRight, FileText, RefreshCw } from 'lucide-react';
+
+type TreeEntry = {
+  name: string;
+  path: string;
+  isDir: boolean;
+};
+
+type NodeState = {
+  loading: boolean;
+  loaded: boolean;
+  error: string | null;
+  entries: TreeEntry[];
+};
+
+function normalizePath(path: string): string {
+  return path.replace(/\\/g, '/');
+}
+
+function pathLabel(path: string): string {
+  const normalized = normalizePath(path).replace(/\/+$/, '');
+  if (!normalized) {
+    return path;
+  }
+  const parts = normalized.split('/');
+  return parts[parts.length - 1] || normalized;
+}
+
+function compareEntries(a: TreeEntry, b: TreeEntry): number {
+  if (a.isDir !== b.isDir) {
+    return a.isDir ? -1 : 1;
+  }
+  return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+}
 
 export const FileExplorer: React.FC<{ rootPath?: string; onOpenFile?: (p: string) => void }> = ({ rootPath, onOpenFile }) => {
-  const [entries, setEntries] = React.useState<Array<{ name: string; path: string; isDir: boolean }>>([]);
-  const [loading, setLoading] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
-  const [currentRoot, setCurrentRoot] = React.useState<string | undefined>(rootPath);
+  const [tree, setTree] = React.useState<Record<string, NodeState>>({});
+  const [expanded, setExpanded] = React.useState<Record<string, boolean>>({});
+  const treeRef = React.useRef(tree);
 
   React.useEffect(() => {
-    setCurrentRoot(rootPath);
-  }, [rootPath]);
+    treeRef.current = tree;
+  }, [tree]);
 
-  const refresh = React.useCallback((p?: string) => {
-    const target = p ?? currentRoot;
-    if (!target) {
-      setEntries([]);
+  const openRootFolder = async () => {
+    const picker = window.omt?.dialog?.openFolder;
+    const picked = picker
+      ? await Promise.resolve(picker(rootPath))
+      : window.prompt('Open folder (absolute path)', rootPath ?? '') ?? null;
+    if (!picked) {
+      return;
+    }
+    onOpenFile?.(picked);
+  };
+
+  const loadChildren = React.useCallback(async (dirPath: string, force = false) => {
+    const current = treeRef.current[dirPath];
+    if (!force && current && (current.loading || current.loaded)) {
       return;
     }
 
-    let mounted = true;
-    setLoading(true);
-    setError(null);
-
-    import('../../lib/serverApi').then(({ fsList }) => {
-      fsList(target)
-        .then((res: any) => {
-          if (!mounted) return;
-          setEntries((res || []).map((e: any) => ({ name: e.name, path: e.path, isDir: e.isDir })));
-          setLoading(false);
-        })
-        .catch((err: Error) => {
-          if (!mounted) return;
-          setError(String(err.message ?? err));
-          setLoading(false);
-        });
-    });
-
-    return () => {
-      mounted = false;
-    };
-  }, [currentRoot]);
-
-  React.useEffect(() => {
-    refresh();
-  }, [currentRoot, refresh]);
-
-  React.useEffect(() => {
-    setCurrentRoot(rootPath);
-  }, [rootPath]);
-
-  const goUp = () => {
-    if (!currentRoot) return;
-    const trimmed = currentRoot.replace(/\\/g, '/').replace(/\/$/, '');
-    const idx = trimmed.lastIndexOf('/');
-    if (idx <= 0) {
-      setCurrentRoot('/');
-    } else {
-      setCurrentRoot(trimmed.slice(0, idx));
-    }
-  };
-
-  const createNew = async (isDir: boolean) => {
-    if (!currentRoot) return;
-    const name = window.prompt(isDir ? 'New folder name' : 'New file name');
-    if (!name) return;
-    const target = `${currentRoot.replace(/\/$/, '')}/${name}`;
-    try {
-      const api = await import('../../lib/serverApi');
-      await api.fsCreate(target, isDir);
-      refresh();
-      if (!isDir) {
-        onOpenFile?.(target);
+    setTree((previous) => ({
+      ...previous,
+      [dirPath]: {
+        loading: true,
+        loaded: previous[dirPath]?.loaded ?? false,
+        error: null,
+        entries: previous[dirPath]?.entries ?? [],
       }
-    } catch (err: any) {
-      window.alert(String(err?.message ?? err));
-    }
-  };
+    }));
 
-  const removeEntry = async (entryPath: string, isDir: boolean) => {
-    if (!window.confirm(`Delete ${entryPath}?`)) return;
+    let timedOut = false;
+    const timeout = window.setTimeout(() => {
+      timedOut = true;
+      setTree((previous) => ({
+        ...previous,
+        [dirPath]: {
+          loading: false,
+          loaded: previous[dirPath]?.loaded ?? false,
+          entries: previous[dirPath]?.entries ?? [],
+          error: 'Timed out while loading folder',
+        }
+      }));
+    }, 12_000);
+
     try {
-      const api = await import('../../lib/serverApi');
-      await api.fsDelete(entryPath, isDir);
-      refresh();
-    } catch (err: any) {
-      window.alert(String(err?.message ?? err));
+      const { fsList } = await import('../../lib/serverApi');
+      const response = await fsList(dirPath);
+      if (timedOut) {
+        return;
+      }
+
+      const entries: TreeEntry[] = (response || []).map((entry: any) => ({
+        name: String(entry?.name ?? ''),
+        path: String(entry?.path ?? ''),
+        isDir: Boolean(entry?.isDir),
+      })).sort(compareEntries);
+
+      setTree((previous) => ({
+        ...previous,
+        [dirPath]: {
+          loading: false,
+          loaded: true,
+          error: null,
+          entries,
+        }
+      }));
+    } catch (error: any) {
+      if (timedOut) {
+        return;
+      }
+      setTree((previous) => ({
+        ...previous,
+        [dirPath]: {
+          loading: false,
+          loaded: false,
+          entries: previous[dirPath]?.entries ?? [],
+          error: String(error?.message ?? error),
+        }
+      }));
+    } finally {
+      window.clearTimeout(timeout);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    if (!rootPath) {
+      setTree({});
+      setExpanded({});
+      return;
+    }
+
+    setExpanded((previous) => ({
+      ...previous,
+      [rootPath]: true,
+    }));
+    void loadChildren(rootPath, true);
+  }, [rootPath, loadChildren]);
+
+  const toggleFolder = (path: string) => {
+    const nextOpen = !expanded[path];
+    setExpanded((previous) => ({ ...previous, [path]: nextOpen }));
+    if (nextOpen) {
+      void loadChildren(path);
     }
   };
 
-  if (!currentRoot) return <div className="p-3 text-sm text-zinc-400">No folder opened</div>;
+  const renderEntries = (folderPath: string, depth: number): React.ReactNode => {
+    const state = tree[folderPath];
+    if (!state) {
+      return null;
+    }
 
-  if (loading) return <div className="p-3 text-sm text-zinc-400">Loading folder...</div>;
-  if (error) return <div className="p-3 text-sm text-red-400">{error}</div>;
+    if (state.loading && state.entries.length === 0) {
+      return <div className="px-3 py-1 text-xs text-zinc-500">Loading...</div>;
+    }
+
+    if (state.error && state.entries.length === 0) {
+      return <div className="px-3 py-1 text-xs text-red-400">{state.error}</div>;
+    }
+
+    return (
+      <>
+        {state.entries.map((entry) => {
+          const isOpen = Boolean(expanded[entry.path]);
+          const childState = tree[entry.path];
+          const paddingLeft = 10 + depth * 14;
+
+          if (entry.isDir) {
+            return (
+              <div key={entry.path}>
+                <button
+                  type="button"
+                  className="w-full text-left h-7 px-2 hover:bg-zinc-800/80 text-zinc-300 flex items-center gap-1.5"
+                  style={{ paddingLeft }}
+                  onClick={() => toggleFolder(entry.path)}
+                  title={entry.path}
+                >
+                  {isOpen ? <ChevronDown size={13} className="text-zinc-500" /> : <ChevronRight size={13} className="text-zinc-500" />}
+                  <span className="truncate text-[13px]">{entry.name}</span>
+                </button>
+
+                {isOpen && (
+                  <div>
+                    {childState?.loading && childState.entries.length === 0 && (
+                      <div className="text-xs text-zinc-500 px-3 py-1" style={{ paddingLeft: paddingLeft + 20 }}>
+                        Loading...
+                      </div>
+                    )}
+                    {childState?.error && childState.entries.length === 0 && (
+                      <div className="text-xs text-red-400 px-3 py-1" style={{ paddingLeft: paddingLeft + 20 }}>
+                        {childState.error}
+                      </div>
+                    )}
+                    {childState && renderEntries(entry.path, depth + 1)}
+                  </div>
+                )}
+              </div>
+            );
+          }
+
+          return (
+            <button
+              key={entry.path}
+              type="button"
+              className="w-full text-left h-7 px-2 hover:bg-zinc-800/80 text-zinc-300 flex items-center gap-1.5"
+              style={{ paddingLeft: paddingLeft + 20 }}
+              onClick={() => onOpenFile?.(entry.path)}
+              title={entry.path}
+            >
+              <FileText size={13} className="text-zinc-500" />
+              <span className="truncate text-[13px]">{entry.name}</span>
+            </button>
+          );
+        })}
+      </>
+    );
+  };
+
+  if (!rootPath) {
+    return (
+      <div className="h-full w-full flex items-center justify-center px-4 text-sm text-zinc-400">
+        <div className="max-w-[220px] text-center">
+          <p className="mb-3">No folder open</p>
+          <button
+            type="button"
+            className="inline-flex items-center gap-2 rounded border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-xs text-zinc-200 hover:bg-zinc-700"
+            onClick={() => void openRootFolder()}
+          >
+            Open Folder
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const rootOpen = Boolean(expanded[rootPath]);
+  const rootState = tree[rootPath];
 
   return (
-    <div className="p-2 text-sm text-zinc-400 overflow-auto h-full">
-      <div className="flex items-center justify-between px-2 py-1 text-xs text-zinc-500">
-        <div className="truncate mr-2">{currentRoot}</div>
-        <div className="flex gap-1">
-          <button className="px-2 py-0.5 text-xs rounded bg-zinc-800 hover:bg-zinc-700" onClick={() => goUp()}>Up</button>
-          <button className="px-2 py-0.5 text-xs rounded bg-emerald-700/10 hover:bg-emerald-700/20" onClick={() => createNew(false)}>New File</button>
-          <button className="px-2 py-0.5 text-xs rounded bg-emerald-700/10 hover:bg-emerald-700/20" onClick={() => createNew(true)}>New Folder</button>
+    <div className="h-full overflow-auto text-zinc-300">
+      <div className="h-8 px-3 flex items-center justify-between text-[11px] tracking-wide uppercase text-zinc-500">
+        <span>Explorer</span>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            className="h-6 w-6 rounded hover:bg-zinc-800 text-zinc-500 hover:text-zinc-200 flex items-center justify-center"
+            title="Refresh"
+            onClick={() => void loadChildren(rootPath, true)}
+          >
+            <RefreshCw size={13} />
+          </button>
+          <button
+            type="button"
+            className="h-6 px-2 rounded hover:bg-zinc-800 text-[11px] text-zinc-500 hover:text-zinc-200"
+            title="Open folder"
+            onClick={() => void openRootFolder()}
+          >
+            Open
+          </button>
         </div>
       </div>
 
-      <div className="mt-2 flex flex-col gap-1">
-        {entries.map((e) => (
-          <div
-            key={e.path}
-            className="px-2 py-1 rounded hover:bg-zinc-800 cursor-pointer flex items-center justify-between"
-          >
-            <div
-              className="truncate flex-1"
-              onClick={() => {
-                if (e.isDir) {
-                  setCurrentRoot(e.path);
-                  return;
-                }
-                onOpenFile?.(e.path);
-              }}
-            >
-              {e.name}
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="text-xs text-zinc-600">{e.isDir ? 'dir' : 'file'}</div>
-              <button
-                className="text-xs text-red-500 hover:underline"
-                onClick={() => removeEntry(e.path, e.isDir)}
-                title="Delete"
-              >
-                Delete
-              </button>
-            </div>
+      <div className="pb-2">
+        <button
+          type="button"
+          className="w-full text-left h-7 px-2 hover:bg-zinc-800/80 text-zinc-300 flex items-center gap-1.5"
+          onClick={() => toggleFolder(rootPath)}
+          title={rootPath}
+        >
+          {rootOpen ? <ChevronDown size={13} className="text-zinc-500" /> : <ChevronRight size={13} className="text-zinc-500" />}
+          <span className="truncate text-[13px]">{pathLabel(rootPath)}</span>
+        </button>
+
+        {rootOpen && (
+          <div>
+            {rootState?.loading && rootState.entries.length === 0 && (
+              <div className="px-8 py-1 text-xs text-zinc-500">Loading...</div>
+            )}
+            {rootState?.error && rootState.entries.length === 0 && (
+              <div className="px-8 py-1 text-xs text-red-400">{rootState.error}</div>
+            )}
+            {rootState && renderEntries(rootPath, 1)}
           </div>
-        ))}
+        )}
       </div>
     </div>
   );
