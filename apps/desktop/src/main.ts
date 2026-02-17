@@ -387,11 +387,14 @@ function registerWindowControlsIpc(): void {
   });
 
   ipcMain.handle(WINDOW_CHANNELS.dialogOpenFile, async (event, defaultPath: unknown) => {
-    const target = BrowserWindow.fromWebContents(event.sender) ?? undefined;
-    const result = await dialog.showOpenDialog(target, {
-      properties: ['openFile'],
+    const target = BrowserWindow.fromWebContents(event.sender);
+    const options = {
+      properties: ['openFile'] as ('openFile')[],
       defaultPath: typeof defaultPath === 'string' && defaultPath.trim().length > 0 ? defaultPath : undefined
-    });
+    };
+    const result = target
+      ? await dialog.showOpenDialog(target, options)
+      : await dialog.showOpenDialog(options);
 
     if (result.canceled || result.filePaths.length === 0) {
       return null;
@@ -401,11 +404,14 @@ function registerWindowControlsIpc(): void {
   });
 
   ipcMain.handle(WINDOW_CHANNELS.dialogOpenFolder, async (event, defaultPath: unknown) => {
-    const target = BrowserWindow.fromWebContents(event.sender) ?? undefined;
-    const result = await dialog.showOpenDialog(target, {
-      properties: ['openDirectory'],
+    const target = BrowserWindow.fromWebContents(event.sender);
+    const options = {
+      properties: ['openDirectory'] as ('openDirectory')[],
       defaultPath: typeof defaultPath === 'string' && defaultPath.trim().length > 0 ? defaultPath : undefined
-    });
+    };
+    const result = target
+      ? await dialog.showOpenDialog(target, options)
+      : await dialog.showOpenDialog(options);
 
     if (result.canceled || result.filePaths.length === 0) {
       return null;
@@ -415,10 +421,13 @@ function registerWindowControlsIpc(): void {
   });
 
   ipcMain.handle(WINDOW_CHANNELS.dialogSaveFile, async (event, defaultPath: unknown) => {
-    const target = BrowserWindow.fromWebContents(event.sender) ?? undefined;
-    const result = await dialog.showSaveDialog(target, {
+    const target = BrowserWindow.fromWebContents(event.sender);
+    const options = {
       defaultPath: typeof defaultPath === 'string' && defaultPath.trim().length > 0 ? defaultPath : undefined
-    });
+    };
+    const result = target
+      ? await dialog.showSaveDialog(target, options)
+      : await dialog.showSaveDialog(options);
 
     if (result.canceled || !result.filePath) {
       return null;

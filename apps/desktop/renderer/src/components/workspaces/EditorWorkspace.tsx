@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { ChevronRight, FileText, FolderOpen, Save } from 'lucide-react';
 import { FileExplorer } from '../panels/FileExplorer';
+import { fsRead, fsStat, fsWrite } from '../../lib/serverApi';
 
 function normalizePath(path: string): string {
   return path.replace(/\\/g, '/');
@@ -122,7 +123,6 @@ export const EditorWorkspace: React.FC<{
     try {
       setLoading(true);
       setError(null);
-      const { fsWrite } = await import('../../lib/serverApi');
       const stat = await fsWrite(selectedPath, draft);
       const resolvedPath = String(stat?.path ?? selectedPath);
       setSavedContent(draft);
@@ -151,7 +151,6 @@ export const EditorWorkspace: React.FC<{
     try {
       setLoading(true);
       setError(null);
-      const { fsWrite } = await import('../../lib/serverApi');
       const stat = await fsWrite(activePath, draft);
       const resolvedPath = String(stat?.path ?? activePath);
       setSavedContent(draft);
@@ -222,7 +221,6 @@ export const EditorWorkspace: React.FC<{
           setLoading(false);
         }, 12_000);
 
-        const { fsRead, fsStat } = await import('../../lib/serverApi');
         const stat = await fsStat(activePath);
         if (cancelled) {
           return;

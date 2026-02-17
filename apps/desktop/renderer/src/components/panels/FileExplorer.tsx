@@ -1,5 +1,6 @@
 import React from 'react';
 import { ChevronDown, ChevronRight, FileText, RefreshCw } from 'lucide-react';
+import { fsList } from '../../lib/serverApi';
 
 type TreeEntry = {
   name: string;
@@ -85,7 +86,6 @@ export const FileExplorer: React.FC<{ rootPath?: string; onOpenFile?: (p: string
     }, 12_000);
 
     try {
-      const { fsList } = await import('../../lib/serverApi');
       const response = await fsList(dirPath);
       if (timedOut) {
         return;
