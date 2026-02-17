@@ -159,3 +159,9 @@ tmp/
 
 # astro
 apps/desktop/renderer/.astro/
+
+# external docs
+docs/external/astro/*
+!docs/external/astro/.gitkeep
+docs/external/electron/*
+!docs/external/electron/.gitkeep
