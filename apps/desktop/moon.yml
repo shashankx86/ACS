@@ -48,3 +48,14 @@ tasks:
       - 'renderer/bun.lock'
     options:
       cache: false
+  
+  typecheck:
+    command: 'bun'
+    args: 'run typecheck'
+    inputs:
+      - 'src/**/*'
+      - 'renderer/src/**/*'
+      - 'package.json'
+      - 'tsconfig.json'
+    options:
+      cache: true

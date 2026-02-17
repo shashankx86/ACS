@@ -45,3 +45,7 @@ tasks:
     deps:
       - 'server:doctor-fix'
       - 'desktop:doctor-fix'
+
+  typecheck:
+    deps:
+      - 'desktop:typecheck'

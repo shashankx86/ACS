@@ -1,11 +1,12 @@
 {
-  "name": "acs-desktop-renderer",
+  "name": "renderer",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "astro dev --port 4321",
     "build": "astro build",
-    "preview": "astro preview --port 4321"
+    "preview": "astro preview --port 4321",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",

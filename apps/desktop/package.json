@@ -13,7 +13,8 @@
     "build": "bun run build:renderer && bun run build:main",
     "dist": "bun run build && electron-builder --config electron-builder.config.cjs",
     "doctor": "bun outdated && (cd renderer && bun outdated)",
-    "doctor:fix": "bun update --latest && (cd renderer && bun update --latest)"
+    "doctor:fix": "bun update --latest && (cd renderer && bun update --latest)",
+    "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.2",
