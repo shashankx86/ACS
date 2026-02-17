@@ -5,6 +5,27 @@
 import { app } from 'electron';
 import { ENV_VARS, DEFAULTS } from './constants';
 
+type ProcessWithDefaultApp = NodeJS.Process & { defaultApp?: boolean };
+
+/**
+ * Normalize app CLI arguments for both packaged and default Electron launches.
+ *
+ * Electron docs: when launched as `electron .`, `process.defaultApp` is true and
+ * argv includes the app path at index 1. Packaged apps do not include this.
+ */
+function getCliArgs(): string[] {
+  const isDefaultApp = !!(process as ProcessWithDefaultApp).defaultApp;
+  const startIndex = isDefaultApp ? 2 : 1;
+  const args = process.argv.slice(startIndex);
+
+  // Backward-compatible with invocations like: omit -- -h
+  if (args[0] === '--') {
+    return args.slice(1);
+  }
+
+  return args;
+}
+
 /**
  * Print usage information
  */
@@ -80,7 +101,7 @@ export function printStatus(): void {
  * Sets environment variables and returns paths to open
  */
 export function parseArgs(): string[] {
-  const argv = process.argv.slice(2);
+  const argv = getCliArgs();
   const openPaths: string[] = [];
 
   for (let i = 0; i < argv.length; i++) {
