@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, ChevronDown, Check, Plus, Terminal, Brain, FileCode2 } from 'lucide-react';
+import { X, ChevronDown, Check, Plus, Terminal, Brain, FileCode2, Minus, Square } from 'lucide-react';
 import { AgentWorkspace } from '../workspaces/AgentWorkspace';
 import { TerminalWorkspace } from '../workspaces/TerminalWorkspace';
 import { EditorWorkspace } from '../workspaces/EditorWorkspace';
@@ -16,19 +16,31 @@ interface Tab {
   openPath?: string | null;
   // dirty flag for unsaved changes
   isDirty?: boolean;
+  // transient UI animation flags
+  isEntering?: boolean;
+  isClosing?: boolean;
 }
 
 import { workspaceOpen } from '../../lib/serverApi';
 
 const pathLabel = (value: string) => value.split(/[\\/]/).filter(Boolean).pop() || value;
+const TAB_ANIMATION_MS = 160;
 
 export default function OmitApp() {
   const [tabs, setTabs] = useState<Tab[]>([
-    { id: '1', title: 'Agent', type: 'agent', isEditorOpen: true, leftWidth: 260, rightWidth: 500, changeType: 'All Changes' }
+    { id: '1', title: 'Agent', type: 'agent', isEditorOpen: false, leftWidth: 260, rightWidth: 500, changeType: 'All Changes' }
   ]);
   const [activeTabId, setActiveTabId] = useState('1');
   const [showDropdown, setShowDropdown] = useState(false);
   const [showNewTabDropdown, setShowNewTabDropdown] = useState(false);
+
+  const animateTabIn = (id: string) => {
+    window.setTimeout(() => {
+      setTabs((previousTabs) => previousTabs.map((tab) => (
+        tab.id === id && tab.isEntering ? { ...tab, isEntering: false } : tab
+      )));
+    }, 16);
+  };
 
   // On first render, check for any CLI-provided paths and open them
   React.useEffect(() => {
@@ -49,18 +61,21 @@ export default function OmitApp() {
         }
 
         let lastId: string | null = null;
+        const addedIds: string[] = [];
         setTabs((previous) => {
           const next = [...previous];
           for (const p of paths) {
             const newId = Math.random().toString(36).substr(2, 9);
             lastId = newId;
-            next.push({ id: newId, title: pathLabel(p), type: 'editor', isEditorOpen: true, leftWidth: 260, rightWidth: 500, changeType: 'All Changes', openPath: p });
+            addedIds.push(newId);
+            next.push({ id: newId, title: pathLabel(p), type: 'editor', isEditorOpen: true, leftWidth: 260, rightWidth: 500, changeType: 'All Changes', openPath: p, isEntering: true });
           }
           return next;
         });
 
         // activate the last opened path
         if (lastId) setActiveTabId(lastId);
+        addedIds.forEach(animateTabIn);
       } catch (_) {
         // ignore
       }
@@ -115,64 +130,82 @@ export default function OmitApp() {
       id: newId,
       title,
       type,
-      isEditorOpen: true,
+      isEditorOpen: type !== 'agent',
       leftWidth: 260,
       rightWidth: 500,
       changeType: 'All Changes',
       openPath: openPath ?? null,
-      isDirty: false
+      isDirty: false,
+      isEntering: true
     }]);
     setActiveTabId(newId);
     setShowNewTabDropdown(false);
+    animateTabIn(newId);
   };
 
   const closeTabById = (id: string, closeWindowIfLast = false) => {
-    setTabs((previousTabs) => {
-      const closingIndex = previousTabs.findIndex((tab) => tab.id === id);
-      if (closingIndex < 0) {
-        return previousTabs;
-      }
+    const currentTabs = tabs;
+    const closingIndex = currentTabs.findIndex((tab) => tab.id === id);
+    if (closingIndex < 0) {
+      return;
+    }
 
-      const tabToClose = previousTabs[closingIndex];
-      if (tabToClose.isDirty) {
-        const discard = window.confirm('This tab has unsaved changes — close and discard changes?');
-        if (!discard) return previousTabs;
-      }
+    const tabToClose = currentTabs[closingIndex];
+    if (tabToClose.isClosing) {
+      return;
+    }
 
-      if (previousTabs.length === 1) {
-        if (closeWindowIfLast) {
-          queueMicrotask(() => {
-            void handleWindowControl('close');
-          });
+    if (tabToClose.isDirty) {
+      const discard = window.confirm('This tab has unsaved changes — close and discard changes?');
+      if (!discard) {
+        return;
+      }
+    }
+
+    if (currentTabs.length > 1 && activeTabId === id) {
+      const fallbackTabs = currentTabs.filter((tab) => tab.id !== id);
+      const fallbackIndex = Math.min(closingIndex, fallbackTabs.length - 1);
+      setActiveTabId(fallbackTabs[fallbackIndex].id);
+    }
+
+    setTabs((previousTabs) => previousTabs.map((tab) => (
+      tab.id === id ? { ...tab, isClosing: true } : tab
+    )));
+
+    window.setTimeout(() => {
+      setTabs((previousTabs) => {
+        const targetIndex = previousTabs.findIndex((tab) => tab.id === id);
+        if (targetIndex < 0) {
           return previousTabs;
         }
 
-        const fallbackTab: Tab = {
-          id: Math.random().toString(36).substr(2, 9),
-          title: 'Agent',
-          type: 'agent',
-          isEditorOpen: true,
-          leftWidth: 260,
-          rightWidth: 500,
-          changeType: 'All Changes'
-        };
+        if (previousTabs.length === 1) {
+          if (closeWindowIfLast) {
+            queueMicrotask(() => {
+              void handleWindowControl('close');
+            });
+            return previousTabs;
+          }
 
-        setActiveTabId(fallbackTab.id);
-        return [fallbackTab];
-      }
+          const fallbackTab: Tab = {
+            id: Math.random().toString(36).substr(2, 9),
+            title: 'Agent',
+            type: 'agent',
+            isEditorOpen: false,
+            leftWidth: 260,
+            rightWidth: 500,
+            changeType: 'All Changes',
+            isEntering: true,
+          };
 
-      const newTabs = previousTabs.filter((tab) => tab.id !== id);
-      setActiveTabId((currentActiveTabId) => {
-        if (currentActiveTabId !== id) {
-          return currentActiveTabId;
+          setActiveTabId(fallbackTab.id);
+          animateTabIn(fallbackTab.id);
+          return [fallbackTab];
         }
 
-        const fallbackIndex = Math.min(closingIndex, newTabs.length - 1);
-        return newTabs[fallbackIndex].id;
+        return previousTabs.filter((tab) => tab.id !== id);
       });
-
-      return newTabs;
-    });
+    }, TAB_ANIMATION_MS);
   };
 
   const closeTab = (e: React.MouseEvent, id: string) => {
@@ -235,13 +268,16 @@ export default function OmitApp() {
               title={tab.title}
               className={`
                         group relative flex items-center gap-2 px-3 py-1.5 h-[34px]
-                        w-[160px] flex-shrink-0
-                        text-xs cursor-pointer rounded-t-xl transition-all mr-1 mb-[-1px] border-t border-x app-no-drag
+                        w-[160px] flex-shrink-0 overflow-hidden
+                        text-xs cursor-pointer rounded-t-xl transition-[width,opacity,transform,margin,background-color,border-color,color] duration-200 ease-out mr-1 mb-[-1px] border-t border-x app-no-drag
+                        ${tab.isEntering ? 'opacity-0 translate-y-1 scale-[0.98]' : 'opacity-100 translate-y-0 scale-100'}
+                        ${tab.isClosing ? 'opacity-0 -translate-y-1 scale-[0.96] pointer-events-none mr-0' : ''}
                         ${activeTabId === tab.id
                   ? 'bg-[#0a0a0a] border-[#27272a] border-b-[#0a0a0a] text-zinc-200 z-10'
                   : 'bg-transparent border-transparent text-zinc-500 hover:bg-[#18181b] hover:text-zinc-300'
                 }
                     `}
+              style={{ width: tab.isClosing ? 0 : 160 }}
             >
               {/* Icon */}
               {getTabIcon(tab.type, activeTabId === tab.id)}
@@ -359,9 +395,9 @@ export default function OmitApp() {
           )}
 
           {/* Window Controls */}
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-0.5">
             <button
-              className="h-7 w-7 hover:bg-[#18181b] rounded cursor-pointer flex items-center justify-center"
+              className="h-7 w-7 hover:bg-[#18181b] rounded-sm cursor-pointer flex items-center justify-center text-zinc-400 hover:text-zinc-200 transition-colors"
               onClick={() => {
                 void handleWindowControl('minimize');
               }}
@@ -369,10 +405,10 @@ export default function OmitApp() {
               aria-label="Minimize window"
               title="Minimize"
             >
-              <span className="text-zinc-400 hover:text-zinc-200 transition-colors text-base leading-none">−</span>
+              <Minus size={12} strokeWidth={2.2} />
             </button>
             <button
-              className="h-7 w-7 hover:bg-[#18181b] rounded cursor-pointer flex items-center justify-center"
+              className="h-7 w-7 hover:bg-[#18181b] rounded-sm cursor-pointer flex items-center justify-center text-zinc-400 hover:text-zinc-200 transition-colors"
               onClick={() => {
                 void handleWindowControl('toggleMaximize');
               }}
@@ -380,10 +416,10 @@ export default function OmitApp() {
               aria-label="Toggle maximize window"
               title="Maximize"
             >
-              <span className="text-zinc-400 hover:text-zinc-200 transition-colors text-[13px] leading-none">□</span>
+              <Square size={10} strokeWidth={2.2} />
             </button>
             <button
-              className="h-7 w-7 hover:bg-red-500/10 rounded cursor-pointer group flex items-center justify-center"
+              className="h-7 w-7 hover:bg-red-500/10 rounded-sm cursor-pointer group flex items-center justify-center text-zinc-400 group-hover:text-red-400 transition-colors"
               onClick={() => {
                 void handleWindowControl('close');
               }}
@@ -391,7 +427,7 @@ export default function OmitApp() {
               aria-label="Close window"
               title="Close"
             >
-              <span className="text-zinc-400 group-hover:text-red-400 transition-colors text-base leading-none">×</span>
+              <X size={12} strokeWidth={2.2} />
             </button>
           </div>
         </div>
